@@ -24,7 +24,8 @@ import {
   toSingleType
 } from "./store.utils";
 import { AnswerTableRow, ResolvedEntity, SourceData, Store } from "./store.types";
-import { runQuery, uploadFile } from "../api";
+import { ApiError, runQuery, uploadFile } from "../api";
+import { notifications } from "../../utils/notifications";
 import { insertAfter, insertBefore, where } from "@utils/functions";
 
 export const useStore = create<Store>()(
@@ -185,6 +186,23 @@ export const useStore = create<Store>()(
         });
       },
 
+      reorderColumns: (sourceIndex: number, targetIndex: number) => {
+        const { getTable, editActiveTable } = get();
+        const columns = [...getTable().columns];
+        
+        // Don't do anything if the indices are the same
+        if (sourceIndex === targetIndex) return;
+        
+        // Remove the column from the source index
+        const [column] = columns.splice(sourceIndex, 1);
+        
+        // Insert the column at the target index
+        columns.splice(targetIndex, 0, column);
+        
+        // Update the table
+        editActiveTable({ columns });
+      },
+
       insertRowBefore: id => {
         const { getTable, editActiveTable } = get();
         editActiveTable({
@@ -209,47 +227,110 @@ export const useStore = create<Store>()(
 
       fillRow: async (id, file) => {
         const { activeTableId, getTable, editTable } = get();
-        const sourceData: SourceData = {
-          type: "document",
-          document: await uploadFile(file)
-        };
-        editTable(activeTableId, {
-          rows: where(getTable(activeTableId).rows, r => r.id === id, {
-            sourceData,
-            cells: {}
-          })
-        });
-        get().rerunRows([id]);
+        try {
+          const document = await uploadFile(file);
+          const sourceData: SourceData = {
+            type: "document",
+            document
+          };
+          
+          editTable(activeTableId, {
+            rows: where(getTable(activeTableId).rows, r => r.id === id, {
+              sourceData,
+              cells: {}
+            })
+          });
+          
+          get().rerunRows([id]);
+          
+          notifications.show({
+            title: 'Document uploaded',
+            message: `Successfully uploaded ${document.name}`,
+            color: 'green'
+          });
+        } catch (error) {
+          console.error('Error uploading document:', error);
+          
+          if (error instanceof ApiError) {
+            notifications.show({
+              title: 'Upload failed',
+              message: error.message,
+              color: 'red'
+            });
+          } else {
+            notifications.show({
+              title: 'Upload failed',
+              message: error instanceof Error ? error.message : 'Unknown error',
+              color: 'red'
+            });
+          }
+        }
       },
 
       fillRows: async files => {
         const { activeTableId, getTable, editTable } = get();
         editTable(activeTableId, { uploadingFiles: true });
+        
+        let successCount = 0;
+        let errorCount = 0;
+        
         try {
           for (const file of files) {
-            const sourceData: SourceData = {
-              type: "document",
-              document: await uploadFile(file)
-            };
-            const rows = getTable(activeTableId).rows;
-            let id = rows.find(r => !r.sourceData)?.id;
-            if (id) {
-              editTable(activeTableId, {
-                rows: where(rows, r => r.id === id, {
-                  sourceData,
-                  cells: {}
-                })
-              });
-            } else {
-              const newRow: AnswerTableRow = {
-                id: (id = cuid()),
-                sourceData,
-                hidden: false,
-                cells: {}
+            try {
+              const document = await uploadFile(file);
+              const sourceData: SourceData = {
+                type: "document",
+                document
               };
-              editTable(activeTableId, { rows: [...rows, newRow] });
+              
+              const rows = getTable(activeTableId).rows;
+              let id = rows.find(r => !r.sourceData)?.id;
+              
+              if (id) {
+                editTable(activeTableId, {
+                  rows: where(rows, r => r.id === id, {
+                    sourceData,
+                    cells: {}
+                  })
+                });
+              } else {
+                const newRow: AnswerTableRow = {
+                  id: (id = cuid()),
+                  sourceData,
+                  hidden: false,
+                  cells: {}
+                };
+                editTable(activeTableId, { rows: [...rows, newRow] });
+              }
+              
+              get().rerunRows([id]);
+              successCount++;
+            } catch (error) {
+              console.error('Error uploading file:', error);
+              errorCount++;
+              
+              if (error instanceof ApiError) {
+                notifications.show({
+                  title: 'Upload failed',
+                  message: `Failed to upload ${file.name}: ${error.message}`,
+                  color: 'red'
+                });
+              } else {
+                notifications.show({
+                  title: 'Upload failed',
+                  message: `Failed to upload ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                  color: 'red'
+                });
+              }
             }
-            get().rerunRows([id]);
+          }
+          
+          if (successCount > 0) {
+            notifications.show({
+              title: 'Upload complete',
+              message: `Successfully uploaded ${successCount} document${successCount !== 1 ? 's' : ''}${errorCount > 0 ? `, ${errorCount} failed` : ''}`,
+              color: 'green'
+            });
           }
         } finally {
           editTable(activeTableId, { uploadingFiles: false });
@@ -400,75 +481,99 @@ export const useStore = create<Store>()(
           }
           if (shouldRunQuery) {
             // Inside runQuery.then callback in rerunCells:
-            runQuery(row, column, globalRules).then(({ answer, chunks, resolvedEntities }) => {
-              editCells(
-                [{ rowId: row.id, columnId: column.id, cell: answer.answer }],
-                activeTableId
-              );
-              
-              // Get current state
-              const currentTable = getTable(activeTableId);
-              
-              // Helper to check if an entity matches any global rule patterns
-              const isGlobalEntity = (entity: { 
-                original: string | string[]; 
-                resolved: string | string[]; 
-                source?: { type: string; id: string }; 
-                entityType?: string 
-              }) => {
-                const originalText = Array.isArray(entity.original) 
-                  ? entity.original.join(' ') 
-                  : entity.original;
-                  
-                return globalRules.some(rule => 
-                  rule.type === 'resolve_entity' && 
-                  rule.options?.some(pattern => 
-                    originalText.toLowerCase().includes(pattern.toLowerCase())
-                  )
+            runQuery(row, column, globalRules)
+              .then(({ answer, chunks, resolvedEntities }) => {
+                editCells(
+                  [{ rowId: row.id, columnId: column.id, cell: answer.answer }],
+                  activeTableId
                 );
-              };
-              
-              editTable(activeTableId, {
-                chunks: { ...currentTable.chunks, [key]: chunks },
-                loadingCells: omit(currentTable.loadingCells, key),
-                columns: currentTable.columns.map(col => ({
-                  ...col,
-                  resolvedEntities: col.id === column.id 
-                    ? [
-                        ...(col.resolvedEntities || []),
-                        ...(resolvedEntities || [])
-                          .filter(entity => !isGlobalEntity(entity))
-                          .map(entity => ({
-                            ...entity,
-                            entityType: column.entityType,
-                            source: {
-                              type: 'column' as const,
-                              id: column.id
-                            }
-                          })) as ResolvedEntity[]
-                      ]
-                    : (col.resolvedEntities || [])
-                })),
-                globalRules: currentTable.globalRules.map(rule => ({
-                  ...rule,
-                  resolvedEntities: rule.type === 'resolve_entity'
-                    ? [
-                        ...(rule.resolvedEntities || []),
-                        ...(resolvedEntities || [])
-                          .filter(entity => isGlobalEntity(entity))
-                          .map(entity => ({
-                            ...entity,
-                            entityType: 'global',
-                            source: {
-                              type: 'global' as const,
-                              id: rule.id
-                            }
-                          })) as ResolvedEntity[]
-                      ]
-                    : (rule.resolvedEntities || [])
-                }))
+                
+                // Get current state
+                const currentTable = getTable(activeTableId);
+                
+                // Helper to check if an entity matches any global rule patterns
+                const isGlobalEntity = (entity: { 
+                  original: string | string[]; 
+                  resolved: string | string[]; 
+                  source?: { type: string; id: string }; 
+                  entityType?: string 
+                }) => {
+                  const originalText = Array.isArray(entity.original) 
+                    ? entity.original.join(' ') 
+                    : entity.original;
+                    
+                  return globalRules.some(rule => 
+                    rule.type === 'resolve_entity' && 
+                    rule.options?.some(pattern => 
+                      originalText.toLowerCase().includes(pattern.toLowerCase())
+                    )
+                  );
+                };
+                
+                editTable(activeTableId, {
+                  chunks: { ...currentTable.chunks, [key]: chunks },
+                  loadingCells: omit(currentTable.loadingCells, key),
+                  columns: currentTable.columns.map(col => ({
+                    ...col,
+                    resolvedEntities: col.id === column.id 
+                      ? [
+                          ...(col.resolvedEntities || []),
+                          ...(resolvedEntities || [])
+                            .filter(entity => !isGlobalEntity(entity))
+                            .map(entity => ({
+                              ...entity,
+                              entityType: column.entityType,
+                              source: {
+                                type: 'column' as const,
+                                id: column.id
+                              }
+                            })) as ResolvedEntity[]
+                        ]
+                      : (col.resolvedEntities || [])
+                  })),
+                  globalRules: currentTable.globalRules.map(rule => ({
+                    ...rule,
+                    resolvedEntities: rule.type === 'resolve_entity'
+                      ? [
+                          ...(rule.resolvedEntities || []),
+                          ...(resolvedEntities || [])
+                            .filter(entity => isGlobalEntity(entity))
+                            .map(entity => ({
+                              ...entity,
+                              entityType: 'global',
+                              source: {
+                                type: 'global' as const,
+                                id: rule.id
+                              }
+                            })) as ResolvedEntity[]
+                        ]
+                      : (rule.resolvedEntities || [])
+                  }))
+                });
+              })
+              .catch(error => {
+                console.error('Error running query:', error);
+                
+                // Clear loading state for this cell
+                editTable(activeTableId, {
+                  loadingCells: omit(getTable(activeTableId).loadingCells, key)
+                });
+                
+                // Show error notification
+                if (error instanceof ApiError) {
+                  notifications.show({
+                    title: 'Query failed',
+                    message: `Failed to run query for ${column.entityType}: ${error.message}`,
+                    color: 'red'
+                  });
+                } else {
+                  notifications.show({
+                    title: 'Query failed',
+                    message: `Failed to run query for ${column.entityType}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    color: 'red'
+                  });
+                }
               });
-            });
           } else {
             editTable(activeTableId, {
               loadingCells: omit(getTable(activeTableId).loadingCells, key)

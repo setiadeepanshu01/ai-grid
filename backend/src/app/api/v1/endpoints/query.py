@@ -1,9 +1,11 @@
 """Query router."""
 
+import asyncio
 import logging
 import uuid
+from typing import Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.dependencies import get_llm_service, get_vector_db_service
 from app.schemas.query_api import (
@@ -137,6 +139,63 @@ async def run_query(
 
         return response_data
 
+    except asyncio.TimeoutError:
+        logger.error("Timeout occurred while processing the query")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Request timed out while waiting for a response from the language model"
+        )
+    except ValueError as e:
+        logger.error(f"Invalid input: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid input: {str(e)}"
+        )
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        error_detail = str(e) if str(e) else "Internal server error"
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_detail
+        )
+
+
+@router.get("/test-error", response_model=Dict[str, Any])
+async def test_error(error_type: str = "timeout") -> Dict[str, Any]:
+    """
+    Test endpoint to simulate different types of errors.
+    
+    This endpoint is useful for testing error handling in the frontend.
+    
+    Parameters
+    ----------
+    error_type : str
+        The type of error to simulate. Options: "timeout", "validation", "server".
+        
+    Returns
+    -------
+    Dict[str, Any]
+        A message indicating the error was simulated.
+        
+    Raises
+    ------
+    HTTPException
+        The simulated error.
+    """
+    if error_type == "timeout":
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Simulated timeout error"
+        )
+    elif error_type == "validation":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Simulated validation error"
+        )
+    elif error_type == "server":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Simulated server error"
+        )
+    else:
+        return {"message": f"Unknown error type: {error_type}"}

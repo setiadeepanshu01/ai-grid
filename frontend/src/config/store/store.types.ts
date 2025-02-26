@@ -23,6 +23,7 @@ export interface Store {
   unwindColumn: (id: string) => void;
   toggleAllColumns: (hidden: boolean) => void;
   deleteColumns: (ids: string[]) => void;
+  reorderColumns: (sourceIndex: number, targetIndex: number) => void;
 
   insertRowBefore: (id?: string) => void;
   insertRowAfter: (id?: string) => void;

@@ -1,4 +1,5 @@
 export * from "./empty";
+export * from "./error-test";
 export * from "./highlight";
 export * from "./info";
 export * from "./kt";
