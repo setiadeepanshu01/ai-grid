@@ -6,6 +6,7 @@ from app.core.config import Settings
 from app.services.loaders.factory import LoaderFactory
 from app.services.loaders.pypdf_service import PDFLoader
 from app.services.loaders.pymupdf_service import PyMuPDFLoaderService
+from app.services.loaders.enhanced_pdf_service import EnhancedPDFLoader
 from app.services.loaders.unstructured_service import UnstructuredLoader
 
 
@@ -19,6 +20,12 @@ def test_create_pymupdf_loader():
     settings = Settings(loader="pymupdf")
     loader = LoaderFactory.create_loader(settings)
     assert isinstance(loader, PyMuPDFLoaderService)
+
+
+def test_create_enhanced_pdf_loader():
+    settings = Settings(loader="enhanced_pdf")
+    loader = LoaderFactory.create_loader(settings)
+    assert isinstance(loader, EnhancedPDFLoader)
 
 
 def test_create_unstructured_loader():

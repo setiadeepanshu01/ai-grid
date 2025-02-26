@@ -7,6 +7,7 @@ from app.core.config import Settings
 from app.services.loaders.base import LoaderService
 from app.services.loaders.pypdf_service import PDFLoader
 from app.services.loaders.pymupdf_service import PyMuPDFLoaderService
+from app.services.loaders.enhanced_pdf_service import EnhancedPDFLoader
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,9 @@ class LoaderFactory:
         elif loader_type == "pymupdf":
             logger.info("Using PyMuPDFLoader")
             return PyMuPDFLoaderService()
+        elif loader_type == "enhanced_pdf":
+            logger.info("Using EnhancedPDFLoader")
+            return EnhancedPDFLoader()
         else:
             logger.warning(f"No loader found for type: {loader_type}")
             return None
