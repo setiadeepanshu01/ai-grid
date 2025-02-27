@@ -13,7 +13,7 @@ import {
 } from "@mantine/core";
 import { IconFileText, IconX } from "@tabler/icons-react";
 import { useStore } from "@config/store";
-import { AnswerTableRow, Document } from "@config/store/store.types";
+import { AnswerTableRow } from "@config/store/store.types";
 
 interface DocumentPreviewProps {
   row: AnswerTableRow | null;
@@ -49,7 +49,7 @@ export function KtDocumentPreview({ row, onClose }: DocumentPreviewProps) {
     
     // If we have chunks, use them as the document content
     if (chunks.length > 0) {
-      setContent(chunks.map(chunk => chunk.content));
+      setContent(chunks.map(chunk => chunk.text || chunk.content));
       setError(null);
       return;
     }
@@ -63,10 +63,11 @@ export function KtDocumentPreview({ row, onClose }: DocumentPreviewProps) {
       setLoading(false);
       
       // If we don't have real content, show a placeholder message
+      const pageCount = document.page_count || 'unknown number of';
       setContent([
         `This is a preview of document: ${document.name}`,
         `To see actual document content, extract data from this document first.`,
-        `The document has ${document.page_count} pages.`
+        `The document has ${pageCount} pages.`
       ]);
     }, 1000);
     
@@ -76,6 +77,10 @@ export function KtDocumentPreview({ row, onClose }: DocumentPreviewProps) {
   if (!row || !document) {
     return null;
   }
+  
+  const pageCount = document.page_count || 'Unknown';
+  const author = document.author || 'Unknown';
+  const tag = document.tag || '';
   
   return (
     <Drawer
@@ -93,12 +98,10 @@ export function KtDocumentPreview({ row, onClose }: DocumentPreviewProps) {
       <Stack>
         <Card withBorder>
           <Title order={4}>{document.name}</Title>
-          <Text size="sm" c="dimmed">Pages: {document.page_count}</Text>
-          {document.author && (
-            <Text size="sm" c="dimmed">Author: {document.author}</Text>
-          )}
-          {document.tag && (
-            <Text size="sm" c="dimmed">Tag: {document.tag}</Text>
+          <Text size="sm" c="dimmed">Pages: {pageCount}</Text>
+          <Text size="sm" c="dimmed">Author: {author}</Text>
+          {tag && (
+            <Text size="sm" c="dimmed">Tag: {tag}</Text>
           )}
         </Card>
         

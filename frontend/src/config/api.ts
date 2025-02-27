@@ -21,20 +21,32 @@ export class ApiError extends Error {
 export const chunkSchema = z.object({
   id: z.string(),
   text: z.string(),
+  content: z.string(),
+  page: z.number(),
   metadata: z.record(z.any()).optional(),
 });
 
 export const documentSchema = z.object({
   id: z.string(),
   name: z.string(),
+  page_count: z.number().optional(),
+  author: z.string().optional(),
+  tag: z.string().optional(),
   chunks: z.array(chunkSchema).optional(),
 });
 
-export const answerSchema = z.object({
-  text: z.string(),
-  chunks: z.array(chunkSchema).optional(),
-  resolvedEntities: z.array(z.any()).optional(),
-});
+export const answerSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.array(z.string()),
+  z.array(z.number()),
+  z.object({
+    text: z.string(),
+    chunks: z.array(chunkSchema).optional(),
+    resolvedEntities: z.array(z.any()).optional(),
+  })
+]);
 
 // API functions
 export const uploadFile = async (file: File): Promise<any> => {

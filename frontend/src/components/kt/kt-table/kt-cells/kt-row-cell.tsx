@@ -153,14 +153,16 @@ function Content({ row }: { row: AnswerTableRow }) {
                 <List.Item>
                   <b>Type</b>: Document
                 </List.Item>
+                {row.sourceData.document.tag && (
+                  <List.Item>
+                    <b>Tag</b>: {row.sourceData.document.tag}
+                  </List.Item>
+                )}
                 <List.Item>
-                  <b>Tag</b>: {row.sourceData.document.tag}
+                  <b>Author</b>: {row.sourceData.document.author || 'Unknown'}
                 </List.Item>
                 <List.Item>
-                  <b>Author</b>: {row.sourceData.document.author}
-                </List.Item>
-                <List.Item>
-                  <b>Page count</b>: {row.sourceData.document.page_count}
+                  <b>Page count</b>: {row.sourceData.document.page_count || 'Unknown'}
                 </List.Item>
               </List>
               <Button 

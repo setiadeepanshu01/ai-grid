@@ -116,7 +116,10 @@ export function castToInt(value: CellValue) {
 export function castToString(value: CellValue) {
   if (isNil(value)) return value;
   if (isArray(value)) {
-    value = value.join(DELIMITER);
+    return value.join(DELIMITER);
+  }
+  if (typeof value === 'object' && value !== null && 'text' in value) {
+    return value.text;
   }
   return String(value).trim() || undefined;
 }
@@ -152,16 +155,23 @@ export function castToType(
   value: CellValue,
   type: AnswerTableColumn["type"]
 ): CellValue {
-  switch (type) {
-    case "int":
-      return castToInt(value);
-    case "str":
-      return castToString(value);
-    case "bool":
-      return castToBool(value);
-    case "int_array":
-      return castToIntArray(value);
-    case "str_array":
-      return castToStrArray(value);
+  try {
+    switch (type) {
+      case "int":
+        return castToInt(value);
+      case "str":
+        return castToString(value);
+      case "bool":
+        return castToBool(value);
+      case "int_array":
+        return castToIntArray(value);
+      case "str_array":
+        return castToStrArray(value);
+      default:
+        return value;
+    }
+  } catch (error) {
+    console.error("Error casting value", { value, type, error });
+    return value;
   }
 }

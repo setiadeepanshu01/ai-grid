@@ -1,8 +1,7 @@
 import { useMemo } from "react";
-import { Blockquote, Modal, Stack, Text, Mark } from "@mantine/core";
-import { isEmpty, pick, values, isString, isArray, flatMap } from "lodash-es";
+import { Blockquote, Modal, Stack, Text } from "@mantine/core";
+import { isEmpty, pick, values, isString, isArray } from "lodash-es";
 import { useStore } from "@config/store";
-import { CellValue } from "@config/store/store.types";
 
 export function KtChunks() {
   const table = useStore(store => store.getTable());
@@ -75,7 +74,7 @@ export function KtChunks() {
         <Stack>
           {chunks.map((chunk, index) => (
             <Blockquote key={index}>
-              <div dangerouslySetInnerHTML={{ __html: highlightAnswers(chunk.content) }} />
+              <div dangerouslySetInnerHTML={{ __html: highlightAnswers(chunk.text || chunk.content) }} />
             </Blockquote>
           ))}
         </Stack>
