@@ -284,9 +284,11 @@ export const useStore = create<Store>()(
               };
               
               const rows = getTable(activeTableId).rows;
-              let id = rows.find(r => !r.sourceData)?.id;
+              const emptyRow = rows.find(r => !r.sourceData);
+              let id: string;
               
-              if (id) {
+              if (emptyRow?.id) {
+                id = emptyRow.id;
                 editTable(activeTableId, {
                   rows: where(rows, r => r.id === id, {
                     sourceData,
