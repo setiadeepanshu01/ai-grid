@@ -29,8 +29,11 @@
       "@config/*": ["./src/config/*"],
       "@utils": ["./src/utils"],
       "@utils/*": ["./src/utils/*"]
-    }
+    },
+    
+    /* Type Declarations */
+    "typeRoots": ["./node_modules/@types", "./src/types"]
   },
-  "include": ["src"],
+  "include": ["src", "src/types/*.d.ts"],
   "exclude": ["src/**/*.modified.tsx", "src/**/*.modified.ts"]
 }
