@@ -491,13 +491,16 @@ export const useStore = create<Store>()(
                 // Get current state
                 const currentTable = getTable(activeTableId);
                 
-                // Helper to check if an entity matches any global rule patterns
-                const isGlobalEntity = (entity: { 
+                // Define a type for the entity parameter
+                type EntityLike = { 
                   original: string | string[]; 
                   resolved: string | string[]; 
                   source?: { type: string; id: string }; 
                   entityType?: string 
-                }) => {
+                };
+                
+                // Helper to check if an entity matches any global rule patterns
+                const isGlobalEntity = (entity: EntityLike) => {
                   const originalText = Array.isArray(entity.original) 
                     ? entity.original.join(' ') 
                     : entity.original;
@@ -519,8 +522,8 @@ export const useStore = create<Store>()(
                       ? [
                           ...(col.resolvedEntities || []),
                           ...(resolvedEntities || [])
-                            .filter(entity => !isGlobalEntity(entity))
-                            .map(entity => ({
+                            .filter((entity: EntityLike) => !isGlobalEntity(entity))
+                            .map((entity: EntityLike) => ({
                               ...entity,
                               entityType: column.entityType,
                               source: {
@@ -537,8 +540,8 @@ export const useStore = create<Store>()(
                       ? [
                           ...(rule.resolvedEntities || []),
                           ...(resolvedEntities || [])
-                            .filter(entity => isGlobalEntity(entity))
-                            .map(entity => ({
+                            .filter((entity: EntityLike) => isGlobalEntity(entity))
+                            .map((entity: EntityLike) => ({
                               ...entity,
                               entityType: 'global',
                               source: {
