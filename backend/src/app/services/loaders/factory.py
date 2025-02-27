@@ -36,7 +36,6 @@ class LoaderFactory:
             if not UNSTRUCTURED_AVAILABLE:
                 logger.warning(
                     "The 'unstructured' package is not installed. "
-                    "Please install it using 'pip install .[unstructured]' to use the UnstructuredLoader."
                 )
                 return None
             if not settings.unstructured_api_key:

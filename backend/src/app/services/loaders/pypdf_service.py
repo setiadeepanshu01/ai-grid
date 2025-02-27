@@ -6,11 +6,18 @@ from typing import List, Union
 
 from langchain.schema import Document as LangchainDocument
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
-from langchain_community.document_loaders import UnstructuredPDFLoader
 
 from app.services.loaders.base import LoaderService
 
 logger = logging.getLogger(__name__)
+
+# Try to import UnstructuredPDFLoader, but don't fail if it's not available
+try:
+    from langchain_community.document_loaders import UnstructuredPDFLoader
+    UNSTRUCTURED_AVAILABLE = True
+except ImportError:
+    UNSTRUCTURED_AVAILABLE = False
+    logger.warning("unstructured package not found, please install it with `pip install unstructured`")
 
 class PDFLoader(LoaderService):
     """PDF and Text loader service."""
@@ -32,11 +39,38 @@ class PDFLoader(LoaderService):
                     logger.info(f"Successfully loaded PDF with PyPDFLoader: {len(documents)} pages")
                     return documents
                 else:
-                    logger.warning("PyPDFLoader returned empty content. Trying UnstructuredPDFLoader as fallback.")
-                    
-                    # If PyPDFLoader didn't extract any text, try UnstructuredPDFLoader
+                    # Check if unstructured is available before trying to use it
+                    if UNSTRUCTURED_AVAILABLE:
+                        logger.warning("PyPDFLoader returned empty content. Trying UnstructuredPDFLoader as fallback.")
+                        
+                        # If PyPDFLoader didn't extract any text, try UnstructuredPDFLoader
+                        try:
+                            logger.info(f"Attempting to load PDF with UnstructuredPDFLoader: {file_path}")
+                            unstructured_loader = UnstructuredPDFLoader(file_path)
+                            unstructured_documents = unstructured_loader.load()
+                            
+                            if unstructured_documents:
+                                logger.info(f"Successfully loaded PDF with UnstructuredPDFLoader: {len(unstructured_documents)} elements")
+                                return unstructured_documents
+                            else:
+                                logger.warning("UnstructuredPDFLoader also returned empty content.")
+                                # Return empty list as last resort
+                                return []
+                        except Exception as e:
+                            logger.error(f"Error using UnstructuredPDFLoader: {str(e)}")
+                            # Return whatever we got from PyPDFLoader, even if empty
+                            return documents
+                    else:
+                        logger.warning("Unstructured package not available. Returning results from PyPDFLoader.")
+                        return documents
+            except Exception as e:
+                logger.error(f"Error using PyPDFLoader: {str(e)}")
+                
+                # Check if unstructured is available before trying to use it as fallback
+                if UNSTRUCTURED_AVAILABLE:
+                    # Try UnstructuredPDFLoader as fallback
                     try:
-                        logger.info(f"Attempting to load PDF with UnstructuredPDFLoader: {file_path}")
+                        logger.info(f"Attempting to load PDF with UnstructuredPDFLoader after PyPDFLoader failed: {file_path}")
                         unstructured_loader = UnstructuredPDFLoader(file_path)
                         unstructured_documents = unstructured_loader.load()
                         
@@ -44,32 +78,16 @@ class PDFLoader(LoaderService):
                             logger.info(f"Successfully loaded PDF with UnstructuredPDFLoader: {len(unstructured_documents)} elements")
                             return unstructured_documents
                         else:
-                            logger.warning("UnstructuredPDFLoader also returned empty content.")
-                            # Return empty list as last resort
+                            logger.warning("UnstructuredPDFLoader returned empty content.")
                             return []
-                    except Exception as e:
-                        logger.error(f"Error using UnstructuredPDFLoader: {str(e)}")
-                        # Return whatever we got from PyPDFLoader, even if empty
-                        return documents
-            except Exception as e:
-                logger.error(f"Error using PyPDFLoader: {str(e)}")
-                
-                # Try UnstructuredPDFLoader as fallback
-                try:
-                    logger.info(f"Attempting to load PDF with UnstructuredPDFLoader after PyPDFLoader failed: {file_path}")
-                    unstructured_loader = UnstructuredPDFLoader(file_path)
-                    unstructured_documents = unstructured_loader.load()
-                    
-                    if unstructured_documents:
-                        logger.info(f"Successfully loaded PDF with UnstructuredPDFLoader: {len(unstructured_documents)} elements")
-                        return unstructured_documents
-                    else:
-                        logger.warning("UnstructuredPDFLoader returned empty content.")
+                    except Exception as unstructured_error:
+                        logger.error(f"Error using UnstructuredPDFLoader: {str(unstructured_error)}")
+                        # Both loaders failed
+                        logger.error("All PDF loaders failed. Returning empty document list.")
                         return []
-                except Exception as unstructured_error:
-                    logger.error(f"Error using UnstructuredPDFLoader: {str(unstructured_error)}")
-                    # Both loaders failed
-                    logger.error("All PDF loaders failed. Returning empty document list.")
+                else:
+                    logger.warning("Unstructured package not available. Cannot use fallback loader.")
+                    logger.error("PDF loading failed. Returning empty document list.")
                     return []
                 
         elif file_extension == ".txt":

@@ -42,8 +42,15 @@ COPY --from=builder /usr/src/app/src ./src
 COPY pyproject.toml ./
 RUN pip install --no-cache /wheels/*
 
-# Install the project
-RUN pip install -e .
+# Install additional system dependencies for unstructured
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    poppler-utils \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install the project and unstructured dependencies
+RUN pip install -e . && pip install "unstructured[all-docs]" langchain-unstructured
 
 # Download the spaCy English language model
 RUN python -m spacy download en_core_web_sm

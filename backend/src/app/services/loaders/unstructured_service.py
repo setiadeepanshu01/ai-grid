@@ -26,7 +26,6 @@ class UnstructuredLoader(LoaderService):
         if not UNSTRUCTURED_AVAILABLE:
             raise ImportError(
                 "The 'unstructured' package is not installed. "
-                "Please install it using 'pip install .[unstructured]' to use the UnstructuredLoader."
             )
         self.settings = settings
 
@@ -35,7 +34,6 @@ class UnstructuredLoader(LoaderService):
         if not UNSTRUCTURED_AVAILABLE:
             raise ImportError(
                 "The 'unstructured' package is not installed. "
-                "Please install it using 'pip install .[unstructured]' to use the UnstructuredLoader."
             )
         loader = LangchainUnstructuredLoader(
             file_path, api_key=self.settings.unstructured_api_key
