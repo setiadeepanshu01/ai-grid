@@ -29,3 +29,5 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://ai-grid-backend.onrender.com
+    plan: free
+    healthCheckPath: /
