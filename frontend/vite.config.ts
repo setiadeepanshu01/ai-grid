@@ -8,5 +8,10 @@ export default defineConfig({
     modules: {
       localsConvention: "camelCaseOnly"
     }
+  },
+  server: {
+    // Allow all hosts
+    host: true,
+    cors: true
   }
 });

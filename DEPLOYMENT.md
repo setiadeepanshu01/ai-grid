@@ -44,9 +44,9 @@ For the backend service, you'll need to set these environment variables:
 
 ## Accessing Your Deployed Application
 
-Once deployment is complete:
+Once deployment is complete, you can access your application at:
 
-- Frontend: `https://ai-grid-frontend.onrender.com`
+- Frontend: `https://ai-grid.onrender.com`
 - Backend API: `https://ai-grid-backend.onrender.com`
 - API Documentation: `https://ai-grid-backend.onrender.com/docs`
 

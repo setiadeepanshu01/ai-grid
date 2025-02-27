@@ -22,7 +22,7 @@ services:
     
   # Frontend web service
   - type: web
-    name: ai-grid-frontend
+    name: ai-grid
     env: docker
     dockerfilePath: ./frontend/Dockerfile
     dockerContext: ./frontend
