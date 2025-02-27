@@ -6,6 +6,13 @@ RUN bun install
 
 # Skip TypeScript checks during build to avoid type errors
 RUN sed -i 's/"build": "tsc && vite build"/"build": "vite build"/g' package.json
+
+# Create a .env file with the API URL if provided as a build arg
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+RUN echo "VITE_API_URL=${VITE_API_URL}" > .env
+
+# Build the application
 RUN bun run build
 
 # Production stage

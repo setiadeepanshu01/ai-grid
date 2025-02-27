@@ -45,6 +45,9 @@ RUN pip install --no-cache /wheels/*
 # Install the project
 RUN pip install -e .
 
+# Download the spaCy English language model
+RUN python -m spacy download en_core_web_sm
+
 # Change ownership of the app directory
 RUN chown -R appuser:appuser /usr/src/app
 
