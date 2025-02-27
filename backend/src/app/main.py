@@ -19,13 +19,15 @@ app = FastAPI(
     openapi_url=f"{settings.api_v1_str}/openapi.json",
 )
 
-# Allow CORS for all origins
+# Configure CORS with specific settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://ai-grid.onrender.com", "http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+    expose_headers=["Content-Length", "Content-Range"],
+    max_age=600,  # Cache preflight requests for 10 minutes
 )
 
 # Include the API router
