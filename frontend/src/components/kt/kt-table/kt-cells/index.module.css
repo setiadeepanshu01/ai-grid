@@ -9,7 +9,9 @@
 
 .dropdown {
   padding: 0;
-  min-width: 360px;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+  min-width: 450px;
+  max-height: 80vh;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: var(--mantine-shadow-md);
 }

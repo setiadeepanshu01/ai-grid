@@ -141,11 +141,18 @@ export class KtColumnCellTemplate implements CellTemplate<KtColumnCell> {
     };
 
     
+    // Single Popover approach - consolidate both popups into one
     return (
-      <CellPopover
-        monoClick={true} // Always use single-click to open the popover
-        mainAxisOffset={0}
-        target={
+      <Popover
+        opened={settingsOpened}
+        onClose={settingsHandlers.close}
+        width={450}
+        position="bottom"
+        shadow="md"
+        withinPortal={true}
+        closeOnClickOutside={true}
+      >
+        <Popover.Target>
           <Tooltip 
             label={column.entityType ? 
               `${column.entityType} (${column.type})\n${column.query ? `Question: ${column.query}` : 'No question defined'}`
@@ -155,15 +162,26 @@ export class KtColumnCellTemplate implements CellTemplate<KtColumnCell> {
             withArrow
             multiline
             w={220}
+            disabled={settingsOpened} // Disable tooltip when popover is open
           >
             <Box
               onMouseEnter={() => setIsHovered(true)}
               onMouseLeave={() => setIsHovered(false)}
+              onClick={() => {
+                try {
+                  if (column.entityType) {
+                    settingsHandlers.open();
+                  }
+                } catch (error) {
+                  console.error('Error opening column settings:', error);
+                }
+              }}
               style={{ 
                 width: '100%', 
                 height: '100%',
                 transition: 'background-color 0.2s ease',
-                backgroundColor: isHovered ? 'var(--mantine-color-blue-light-hover)' : undefined
+                backgroundColor: isHovered || settingsOpened ? 'var(--mantine-color-blue-light-hover)' : undefined,
+                cursor: column.entityType ? 'pointer' : 'default'
               }}
             >
               <Group 
@@ -186,6 +204,7 @@ export class KtColumnCellTemplate implements CellTemplate<KtColumnCell> {
                     size="xs"
                     color="gray"
                     style={{ cursor: 'grab' }}
+                    onMouseDown={(e) => e.stopPropagation()}
                   >
                     <IconGripVertical size={14} />
                   </ActionIcon>
@@ -196,146 +215,96 @@ export class KtColumnCellTemplate implements CellTemplate<KtColumnCell> {
                 />
                 <Text fw={500}>{column.entityType}</Text>
                 {isHovered && column.entityType && (
-                  <Popover
-                    opened={settingsOpened}
-                    onClose={settingsHandlers.close}
-                    width="target"
-                    position="right"
-                    transitionProps={{ transition: "scale-y" }}
-                    withinPortal={true}
-                    closeOnClickOutside={true}
+                  <ActionIcon 
+                    variant="subtle" 
+                    size="xs"
+                    color="blue"
+                    ml="auto"
+                    mr="xs"
+                    onClick={(e) => {
+                      try {
+                        e.stopPropagation();
+                        settingsHandlers.open();
+                      } catch (error) {
+                        console.error('Error opening column settings:', error);
+                      }
+                    }}
                   >
-                    <Popover.Target>
-                      <ActionIcon 
-                        variant="subtle" 
-                        size="xs"
-                        color="blue"
-                        ml="auto"
-                        mr="xs"
-                        onClick={(e) => {
-                          try {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            settingsHandlers.open();
-                          } catch (error) {
-                            console.error('Error opening column settings:', error);
-                          }
-                        }}
-                      >
-                        <IconSettings size={14} />
-                      </ActionIcon>
-                    </Popover.Target>
-                    <Popover.Dropdown
-                      onPointerDown={(e: React.PointerEvent) => {
-                        try {
-                          e.stopPropagation();
-                        } catch (error) {
-                          console.error('Error in Popover.Dropdown onPointerDown:', error);
-                        }
-                      }}
-                      onKeyDown={(e: React.KeyboardEvent) => {
-                        try {
-                          e.stopPropagation();
-                        } catch (error) {
-                          console.error('Error in Popover.Dropdown onKeyDown:', error);
-                        }
-                      }}
-                      className={classes.dropdown}
-                    >
-                      <Box p="sm">
-                        <KtColumnSettings
-                          value={column}
-                          onChange={(value, run) => {
-                            try {
-                              useStore.getState().editColumn(column.id, value);
-                              if (run) {
-                                useStore.getState().rerunColumns([column.id]);
-                              }
-                            } catch (error) {
-                              console.error('Error in column settings onChange:', error);
-                            }
-                          }}
-                          onRerun={() => {
-                            try {
-                              useStore.getState().rerunColumns([column.id]);
-                            } catch (error) {
-                              console.error('Error in column settings onRerun:', error);
-                            }
-                          }}
-                          onUnwind={() => {
-                            try {
-                              useStore.getState().unwindColumn(column.id);
-                            } catch (error) {
-                              console.error('Error in column settings onUnwind:', error);
-                            }
-                          }}
-                          onHide={() => {
-                            try {
-                              useStore.getState().editColumn(column.id, { hidden: true });
-                            } catch (error) {
-                              console.error('Error in column settings onHide:', error);
-                            }
-                          }}
-                          onDelete={() => {
-                            try {
-                              useStore.getState().deleteColumns([column.id]);
-                            } catch (error) {
-                              console.error('Error in column settings onDelete:', error);
-                            }
-                          }}
-                        />
-                      </Box>
-                    </Popover.Dropdown>
-                  </Popover>
+                    <IconSettings size={14} />
+                  </ActionIcon>
                 )}
               </Group>
             </Box>
           </Tooltip>
-        }
-        dropdown={
-          <KtColumnSettings
-            value={column}
-            onChange={(value, run) => {
-              try {
-                useStore.getState().editColumn(column.id, value);
-                if (run) {
-                  useStore.getState().rerunColumns([column.id]);
+        </Popover.Target>
+        <Popover.Dropdown
+          onPointerDown={(e: React.PointerEvent) => {
+            try {
+              e.stopPropagation();
+            } catch (error) {
+              console.error('Error in Popover.Dropdown onPointerDown:', error);
+            }
+          }}
+          onKeyDown={(e: React.KeyboardEvent) => {
+            try {
+              e.stopPropagation();
+            } catch (error) {
+              console.error('Error in Popover.Dropdown onKeyDown:', error);
+            }
+          }}
+          className={classes.dropdown}
+          style={{ maxHeight: '80vh', overflowY: 'auto' }}
+        >
+          <Box p="sm">
+            <KtColumnSettings
+              value={column}
+              onChange={(value, run) => {
+                try {
+                  useStore.getState().editColumn(column.id, value);
+                  if (run) {
+                    useStore.getState().rerunColumns([column.id]);
+                  }
+                  settingsHandlers.close();
+                } catch (error) {
+                  console.error('Error in column settings onChange:', error);
                 }
-              } catch (error) {
-                console.error('Error in column settings dropdown onChange:', error);
-              }
-            }}
-            onRerun={() => {
-              try {
-                useStore.getState().rerunColumns([column.id]);
-              } catch (error) {
-                console.error('Error in column settings dropdown onRerun:', error);
-              }
-            }}
-            onUnwind={() => {
-              try {
-                useStore.getState().unwindColumn(column.id);
-              } catch (error) {
-                console.error('Error in column settings dropdown onUnwind:', error);
-              }
-            }}
-            onHide={() => {
-              try {
-                useStore.getState().editColumn(column.id, { hidden: true });
-              } catch (error) {
-                console.error('Error in column settings dropdown onHide:', error);
-              }
-            }}
-            onDelete={() => {
-              try {
-                useStore.getState().deleteColumns([column.id]);
-              } catch (error) {
-                console.error('Error in column settings dropdown onDelete:', error);
-              }
-            }}
-          />
-        }
-      />
+              }}
+              onRerun={() => {
+                try {
+                  useStore.getState().rerunColumns([column.id]);
+                  settingsHandlers.close();
+                } catch (error) {
+                  console.error('Error in column settings onRerun:', error);
+                }
+              }}
+              onUnwind={() => {
+                try {
+                  useStore.getState().unwindColumn(column.id);
+                  settingsHandlers.close();
+                } catch (error) {
+                  console.error('Error in column settings onUnwind:', error);
+                }
+              }}
+              onHide={() => {
+                try {
+                  useStore.getState().editColumn(column.id, { hidden: true });
+                  settingsHandlers.close();
+                } catch (error) {
+                  console.error('Error in column settings onHide:', error);
+                }
+              }}
+              onDelete={() => {
+                try {
+                  useStore.getState().deleteColumns([column.id]);
+                  settingsHandlers.close();
+                } catch (error) {
+                  console.error('Error in column settings onDelete:', error);
+                }
+              }}
+            />
+          </Box>
+        </Popover.Dropdown>
+      </Popover>
     );
   }
 }
