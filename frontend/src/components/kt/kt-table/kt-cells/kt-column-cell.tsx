@@ -1,7 +1,6 @@
 import { Cell, CellTemplate, Compatible, Uncertain } from "@silevis/reactgrid";
 import { Group, Text, ColorSwatch, ActionIcon, Tooltip, Box, Popover } from "@mantine/core";
 import { IconGripVertical, IconSettings } from "@tabler/icons-react";
-import { CellPopover } from "./index.utils";
 import { KtColumnSettings } from "./kt-column-settings";
 import { AnswerTableColumn, useStore } from "@config/store";
 import { entityColor } from "@utils/functions";
