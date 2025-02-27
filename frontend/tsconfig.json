@@ -31,5 +31,6 @@
       "@utils/*": ["./src/utils/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.modified.tsx", "src/**/*.modified.ts"]
 }

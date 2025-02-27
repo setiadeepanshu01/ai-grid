@@ -53,13 +53,28 @@ export const uploadFile = async (file: File): Promise<any> => {
   return response.json();
 };
 
-export const runQuery = async (query: string, documentIds?: string[]): Promise<any> => {
+export const runQuery = async (row: any, column: any, globalRules: any = []): Promise<any> => {
+  // Get document ID from the row's sourceData
+  const documentId = row?.sourceData?.document?.id || "00000000000000000000000000000000";
+  
+  // Create a unique prompt ID if not provided
+  const promptId = column?.id || Math.random().toString(36).substring(2, 15);
+  
+  // Combine column rules with global rules
+  const rules = [...(column?.rules || []), ...(globalRules || [])];
+  
   const response = await fetch(API_ENDPOINTS.QUERY, {
     method: 'POST',
     headers: DEFAULT_HEADERS,
     body: JSON.stringify({
-      query,
-      documentIds,
+      document_id: documentId,
+      prompt: {
+        id: promptId,
+        entity_type: column?.entityType || "",
+        query: column?.query || "",
+        type: column?.type || "str",
+        rules: rules
+      }
     }),
   });
   
