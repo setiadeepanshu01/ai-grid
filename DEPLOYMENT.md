@@ -10,37 +10,43 @@ This guide provides step-by-step instructions for deploying the AI Grid applicat
 
 ## Deployment Steps
 
-### 1. Push Your Code to a Git Repository
+### 1. Run the Deployment Preparation Script
 
-If you haven't already, push your code to a Git repository (GitHub, GitLab, etc.):
+Run the deployment preparation script to ensure your code is ready for deployment:
 
 ```bash
-git init
-git add .
-git commit -m "Initial commit"
+./deploy-to-render.sh
+```
+
+This script will:
+- Initialize a Git repository if needed
+- Commit any changes
+- Provide instructions for deploying to Render
+
+### 2. Push Your Code to a Git Repository
+
+Push your code to a Git repository (GitHub, GitLab, etc.):
+
+```bash
 git remote add origin <your-repository-url>
 git push -u origin main
 ```
 
-### 2. Create a New Render Blueprint
+### 3. Deploy Using Render Blueprint
 
-1. Log in to your [Render Dashboard](https://dashboard.render.com/)
-2. Click on "New" and select "Blueprint"
-3. Connect your Git repository
-4. Render will automatically detect the `render.yaml` file and set up the services
+1. Go to [Render Dashboard](https://dashboard.render.com/select-repo)
+2. Connect your GitHub/GitLab repository
+3. Select "Blueprint" as the deployment type
+4. Render will detect the `render-blueprint.yaml` file
+5. **Important**: If you already have a service named 'ai-grid-frontend', delete it first
+6. Apply the blueprint to create the services with the correct names
 
-### 3. Configure Environment Variables
+### 4. Configure Environment Variables
 
 For the backend service, you'll need to set these environment variables:
 
-- `OPENAI_API_KEY`: Your OpenAI API key
-- `MILVUS_DB_URI`: This is already set to `/data/milvus_db.sqlite` in the render.yaml file
-
-### 4. Deploy Your Services
-
-1. Review the configuration
-2. Click "Apply" to start the deployment process
-3. Render will build and deploy your services according to the configuration in `render.yaml`
+- `OPENAI_API_KEY`: Your OpenAI API key is already set in the backend/.env file
+- `MILVUS_DB_URI`: This is already set to `/data/milvus_db.sqlite` in the render-blueprint.yaml file
 
 ## Accessing Your Deployed Application
 
@@ -49,6 +55,13 @@ Once deployment is complete, you can access your application at:
 - Frontend: `https://ai-grid.onrender.com`
 - Backend API: `https://ai-grid-backend.onrender.com`
 - API Documentation: `https://ai-grid-backend.onrender.com/docs`
+
+## UI Improvements
+
+The deployment includes modifications to reduce unwanted pop-ups:
+- Simplified UI components
+- Removed error test modal
+- Streamlined controls
 
 ## Troubleshooting
 
