@@ -53,16 +53,26 @@ export const uploadFile = async (file: File): Promise<any> => {
   const formData = new FormData();
   formData.append('file', file);
   
-  const response = await fetch(API_ENDPOINTS.DOCUMENT_UPLOAD, {
-    method: 'POST',
-    body: formData,
-  });
+  console.log('Uploading file to:', API_ENDPOINTS.DOCUMENT_UPLOAD);
   
-  if (!response.ok) {
-    throw new ApiError(`Failed to upload file: ${response.statusText}`, response.status);
+  try {
+    const response = await fetch(API_ENDPOINTS.DOCUMENT_UPLOAD, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+      credentials: 'include',
+      headers: UPLOAD_HEADERS
+    });
+    
+    if (!response.ok) {
+      throw new ApiError(`Failed to upload file: ${response.statusText}`, response.status);
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    throw error;
   }
-  
-  return response.json();
 };
 
 export const runQuery = async (row: any, column: any, globalRules: any = []): Promise<any> => {
@@ -75,26 +85,35 @@ export const runQuery = async (row: any, column: any, globalRules: any = []): Pr
   // Combine column rules with global rules
   const rules = [...(column?.rules || []), ...(globalRules || [])];
   
-  const response = await fetch(API_ENDPOINTS.QUERY, {
-    method: 'POST',
-    headers: DEFAULT_HEADERS,
-    body: JSON.stringify({
-      document_id: documentId,
-      prompt: {
-        id: promptId,
-        entity_type: column?.entityType || "",
-        query: column?.query || "",
-        type: column?.type || "str",
-        rules: rules
-      }
-    }),
-  });
+  console.log('Running query to:', API_ENDPOINTS.QUERY);
   
-  if (!response.ok) {
-    throw new ApiError(`Query failed: ${response.statusText}`, response.status);
+  try {
+    const response = await fetch(API_ENDPOINTS.QUERY, {
+      method: 'POST',
+      headers: DEFAULT_HEADERS,
+      mode: 'cors',
+      credentials: 'include',
+      body: JSON.stringify({
+        document_id: documentId,
+        prompt: {
+          id: promptId,
+          entity_type: column?.entityType || "",
+          query: column?.query || "",
+          type: column?.type || "str",
+          rules: rules
+        }
+      }),
+    });
+    
+    if (!response.ok) {
+      throw new ApiError(`Query failed: ${response.statusText}`, response.status);
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('Error running query:', error);
+    throw error;
   }
-  
-  return response.json();
 };
 
 // API endpoints
@@ -129,6 +148,7 @@ export const DEFAULT_HEADERS = {
 // File upload headers
 export const UPLOAD_HEADERS = {
   'Accept': 'application/json',
+  'Origin': 'https://ai-grid.onrender.com',
 };
 
 // Request timeout in milliseconds
