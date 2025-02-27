@@ -46,7 +46,7 @@ git push -u origin main
 For the backend service, you'll need to set these environment variables:
 
 - `OPENAI_API_KEY`: Your OpenAI API key is already set in the backend/.env file
-- `MILVUS_DB_URI`: This is already set to `/data/milvus_db.sqlite` in the render-blueprint.yaml file
+- `MILVUS_DB_URI`: This is already set to `/data/milvus_db.db` in the render-blueprint.yaml file
 
 ## Accessing Your Deployed Application
 
