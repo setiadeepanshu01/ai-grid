@@ -13,7 +13,7 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: MILVUS_DB_URI
-        value: /data/milvus_db.sqlite
+        value: /data/milvus_db.db
     healthCheckPath: /ping
     disk:
       name: milvus-data
