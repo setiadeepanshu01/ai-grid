@@ -106,9 +106,9 @@ export const API_ENDPOINTS = {
   API_V1: `${API_URL}/api/v1`,
   
   // Document endpoints
-  DOCUMENTS: `${API_URL}/api/v1/documents`,
-  DOCUMENT_UPLOAD: `${API_URL}/api/v1/documents/upload`,
-  DOCUMENT_PROCESS: `${API_URL}/api/v1/documents/process`,
+  DOCUMENTS: `${API_URL}/api/v1/document`,
+  DOCUMENT_UPLOAD: `${API_URL}/api/v1/document`,
+  DOCUMENT_PROCESS: `${API_URL}/api/v1/document/process`,
   
   // Graph endpoints
   GRAPHS: `${API_URL}/api/v1/graphs`,
