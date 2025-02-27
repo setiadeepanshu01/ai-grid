@@ -13,5 +13,6 @@ export default defineConfig({
     // Allow all hosts
     host: true,
     cors: true
-  }
+  },
+  // Disable type checking is handled in the Dockerfile
 });
