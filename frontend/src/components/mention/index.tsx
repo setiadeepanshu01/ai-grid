@@ -1,4 +1,4 @@
-import { ReactNode, useMemo } from "react";
+import { ReactNode, useMemo, useCallback } from "react";
 import { Box, Text, Input, InputWrapperProps, Paper } from "@mantine/core";
 import { useUncontrolled } from "@mantine/hooks";
 import styled from "@emotion/styled";
@@ -40,13 +40,42 @@ export function Mention({
   });
 
   const colors = useMemo(() => {
-    const matches = [...value.matchAll(/.\[[^\]]+\]\((\w+)\)/g)];
-    return matches.map(match => {
-      const group = options.find(option => match[0].startsWith(option.trigger));
-      const option = group?.data.find(item => item.id === match[1]);
-      return (option && group?.color?.(option)) || "transparent";
-    });
+    try {
+      if (!value) return [];
+      const matches = [...value.matchAll(/.\[[^\]]+\]\((\w+)\)/g)];
+      return matches.map(match => {
+        try {
+          const group = options.find(option => match[0].startsWith(option.trigger));
+          const option = group?.data.find(item => item.id === match[1]);
+          return (option && group?.color?.(option)) || "transparent";
+        } catch (error) {
+          console.error('Error processing match in Mention component:', error);
+          return "transparent";
+        }
+      });
+    } catch (error) {
+      console.error('Error calculating colors in Mention component:', error);
+      return [];
+    }
   }, [value, options]);
+
+  // Create a memoized handler for onChange to prevent unnecessary re-renders
+  const handleChange = useCallback((event: { target: { value: string } }) => {
+    try {
+      setValue(event.target.value);
+    } catch (error) {
+      console.error('Error in Mention component onChange:', error);
+      // Fallback to empty string if there's an error
+      setValue('');
+    }
+  }, [setValue]);
+
+  // Create a memoized handler for suggestions container to prevent unnecessary re-renders
+  const renderSuggestionsContainer = useCallback((node: React.ReactNode) => (
+    <Paper withBorder shadow="sm" p={4}>
+      {node}
+    </Paper>
+  ), []);
 
   return (
     <StyledInputWrapper
@@ -59,15 +88,11 @@ export function Mention({
         allowSpaceInQuery
         allowSuggestionsAboveCursor
         placeholder={placeholder}
-        value={value}
-        onChange={e => setValue(e.target.value)}
+        value={value || ''}
+        onChange={handleChange}
         className="mentions"
         a11ySuggestionsListLabel="Suggested mentions"
-        customSuggestionsContainer={node => (
-          <Paper withBorder shadow="sm" p={4}>
-            {node}
-          </Paper>
-        )}
+        customSuggestionsContainer={renderSuggestionsContainer}
       >
         {options.map(({ trigger, data, render }) => (
           <ReactMention

@@ -103,7 +103,10 @@ export function KtColumnSettings({
   };
 
   const handleClipboardEvent = (e: React.ClipboardEvent) => {
+    // Prevent the event from bubbling up to parent components
     e.stopPropagation();
+    // Also prevent the default behavior to be extra safe
+    e.preventDefault();
   };
 
   const rulesMenu = (

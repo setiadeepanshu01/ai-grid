@@ -202,6 +202,8 @@ export class KtColumnCellTemplate implements CellTemplate<KtColumnCell> {
                     width="target"
                     position="right"
                     transitionProps={{ transition: "scale-y" }}
+                    withinPortal={true}
+                    closeOnClickOutside={true}
                   >
                     <Popover.Target>
                       <ActionIcon 
@@ -211,31 +213,76 @@ export class KtColumnCellTemplate implements CellTemplate<KtColumnCell> {
                         ml="auto"
                         mr="xs"
                         onClick={(e) => {
-                          e.stopPropagation();
-                          settingsHandlers.open();
+                          try {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            settingsHandlers.open();
+                          } catch (error) {
+                            console.error('Error opening column settings:', error);
+                          }
                         }}
                       >
                         <IconSettings size={14} />
                       </ActionIcon>
                     </Popover.Target>
                     <Popover.Dropdown
-                      onPointerDown={(e: React.PointerEvent) => e.stopPropagation()}
-                      onKeyDown={(e: React.KeyboardEvent) => e.stopPropagation()}
+                      onPointerDown={(e: React.PointerEvent) => {
+                        try {
+                          e.stopPropagation();
+                        } catch (error) {
+                          console.error('Error in Popover.Dropdown onPointerDown:', error);
+                        }
+                      }}
+                      onKeyDown={(e: React.KeyboardEvent) => {
+                        try {
+                          e.stopPropagation();
+                        } catch (error) {
+                          console.error('Error in Popover.Dropdown onKeyDown:', error);
+                        }
+                      }}
                       className={classes.dropdown}
                     >
                       <Box p="sm">
                         <KtColumnSettings
                           value={column}
                           onChange={(value, run) => {
-                            useStore.getState().editColumn(column.id, value);
-                            run && useStore.getState().rerunColumns([column.id]);
+                            try {
+                              useStore.getState().editColumn(column.id, value);
+                              if (run) {
+                                useStore.getState().rerunColumns([column.id]);
+                              }
+                            } catch (error) {
+                              console.error('Error in column settings onChange:', error);
+                            }
                           }}
-                          onRerun={() => useStore.getState().rerunColumns([column.id])}
-                          onUnwind={() => useStore.getState().unwindColumn(column.id)}
-                          onHide={() =>
-                            useStore.getState().editColumn(column.id, { hidden: true })
-                          }
-                          onDelete={() => useStore.getState().deleteColumns([column.id])}
+                          onRerun={() => {
+                            try {
+                              useStore.getState().rerunColumns([column.id]);
+                            } catch (error) {
+                              console.error('Error in column settings onRerun:', error);
+                            }
+                          }}
+                          onUnwind={() => {
+                            try {
+                              useStore.getState().unwindColumn(column.id);
+                            } catch (error) {
+                              console.error('Error in column settings onUnwind:', error);
+                            }
+                          }}
+                          onHide={() => {
+                            try {
+                              useStore.getState().editColumn(column.id, { hidden: true });
+                            } catch (error) {
+                              console.error('Error in column settings onHide:', error);
+                            }
+                          }}
+                          onDelete={() => {
+                            try {
+                              useStore.getState().deleteColumns([column.id]);
+                            } catch (error) {
+                              console.error('Error in column settings onDelete:', error);
+                            }
+                          }}
                         />
                       </Box>
                     </Popover.Dropdown>
@@ -249,15 +296,43 @@ export class KtColumnCellTemplate implements CellTemplate<KtColumnCell> {
           <KtColumnSettings
             value={column}
             onChange={(value, run) => {
-              useStore.getState().editColumn(column.id, value);
-              run && useStore.getState().rerunColumns([column.id]);
+              try {
+                useStore.getState().editColumn(column.id, value);
+                if (run) {
+                  useStore.getState().rerunColumns([column.id]);
+                }
+              } catch (error) {
+                console.error('Error in column settings dropdown onChange:', error);
+              }
             }}
-            onRerun={() => useStore.getState().rerunColumns([column.id])}
-            onUnwind={() => useStore.getState().unwindColumn(column.id)}
-            onHide={() =>
-              useStore.getState().editColumn(column.id, { hidden: true })
-            }
-            onDelete={() => useStore.getState().deleteColumns([column.id])}
+            onRerun={() => {
+              try {
+                useStore.getState().rerunColumns([column.id]);
+              } catch (error) {
+                console.error('Error in column settings dropdown onRerun:', error);
+              }
+            }}
+            onUnwind={() => {
+              try {
+                useStore.getState().unwindColumn(column.id);
+              } catch (error) {
+                console.error('Error in column settings dropdown onUnwind:', error);
+              }
+            }}
+            onHide={() => {
+              try {
+                useStore.getState().editColumn(column.id, { hidden: true });
+              } catch (error) {
+                console.error('Error in column settings dropdown onHide:', error);
+              }
+            }}
+            onDelete={() => {
+              try {
+                useStore.getState().deleteColumns([column.id]);
+              } catch (error) {
+                console.error('Error in column settings dropdown onDelete:', error);
+              }
+            }}
           />
         }
       />
