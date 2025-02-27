@@ -4,9 +4,6 @@ WORKDIR /app
 COPY . .
 RUN bun install
 
-# Skip component modifications as the modified files are no longer needed
-# The API issues have been fixed in the main components
-
 # Skip TypeScript checks during build to avoid type errors
 RUN sed -i 's/"build": "tsc && vite build"/"build": "vite build"/g' package.json
 RUN bun run build
