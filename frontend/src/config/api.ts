@@ -75,6 +75,36 @@ export const uploadFile = async (file: File): Promise<any> => {
   }
 };
 
+export const uploadFiles = async (files: File[]): Promise<any> => {
+  const formData = new FormData();
+  
+  // Append each file with the same field name
+  files.forEach(file => {
+    formData.append('files', file);
+  });
+  
+  console.log(`Uploading ${files.length} files in batch to:`, API_ENDPOINTS.BATCH_DOCUMENT_UPLOAD);
+  
+  try {
+    const response = await fetch(API_ENDPOINTS.BATCH_DOCUMENT_UPLOAD, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+      credentials: 'include',
+      headers: UPLOAD_HEADERS
+    });
+    
+    if (!response.ok) {
+      throw new ApiError(`Failed to upload files: ${response.statusText}`, response.status);
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('Error uploading files:', error);
+    throw error;
+  }
+};
+
 export const runQuery = async (row: any, column: any, globalRules: any = []): Promise<any> => {
   // Get document ID from the row's sourceData
   const documentId = row?.sourceData?.document?.id || "00000000000000000000000000000000";
@@ -116,6 +146,54 @@ export const runQuery = async (row: any, column: any, globalRules: any = []): Pr
   }
 };
 
+/**
+ * Run multiple queries in parallel using the batch endpoint
+ * @param queries Array of query objects, each containing row, column, and globalRules
+ * @returns Array of query results in the same order as the input queries
+ */
+export const runBatchQueries = async (
+  queries: Array<{ row: any; column: any; globalRules?: any[] }>
+): Promise<any[]> => {
+  // Format the queries for the batch endpoint
+  const formattedQueries = queries.map(({ row, column, globalRules = [] }) => {
+    const documentId = row?.sourceData?.document?.id || "00000000000000000000000000000000";
+    const promptId = column?.id || Math.random().toString(36).substring(2, 15);
+    const rules = [...(column?.rules || []), ...(globalRules || [])];
+    
+    return {
+      document_id: documentId,
+      prompt: {
+        id: promptId,
+        entity_type: column?.entityType || "",
+        query: column?.query || "",
+        type: column?.type || "str",
+        rules: rules
+      }
+    };
+  });
+  
+  console.log(`Running batch query with ${formattedQueries.length} queries to:`, API_ENDPOINTS.BATCH_QUERY);
+  
+  try {
+    const response = await fetch(API_ENDPOINTS.BATCH_QUERY, {
+      method: 'POST',
+      headers: DEFAULT_HEADERS,
+      mode: 'cors',
+      credentials: 'include',
+      body: JSON.stringify(formattedQueries),
+    });
+    
+    if (!response.ok) {
+      throw new ApiError(`Batch query failed: ${response.statusText}`, response.status);
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('Error running batch query:', error);
+    throw error;
+  }
+};
+
 // API endpoints
 export const API_ENDPOINTS = {
   // Base API URL
@@ -127,6 +205,7 @@ export const API_ENDPOINTS = {
   // Document endpoints
   DOCUMENTS: `${API_URL}/api/v1/document`,
   DOCUMENT_UPLOAD: `${API_URL}/api/v1/document`,
+  BATCH_DOCUMENT_UPLOAD: `${API_URL}/api/v1/document/batch`,
   DOCUMENT_PROCESS: `${API_URL}/api/v1/document/process`,
   
   // Graph endpoints
@@ -135,6 +214,7 @@ export const API_ENDPOINTS = {
   
   // Query endpoints
   QUERY: `${API_URL}/api/v1/query`,
+  BATCH_QUERY: `${API_URL}/api/v1/query/batch`,
   
   // Health check
   HEALTH: `${API_URL}/ping`,

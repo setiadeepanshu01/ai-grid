@@ -1,8 +1,10 @@
 """Document service."""
 
+import asyncio
 import logging
 import os
 import tempfile
+import time
 import uuid
 from typing import Dict, List, Optional
 
@@ -93,9 +95,13 @@ class DocumentService:
     async def _process_document(
         self, file_path: str
     ) -> List[LangchainDocument]:
-        """Process a document."""
+        """Process a document with optimized performance."""
+        start_time = time.time()
+        
         # Load the document
         docs = await self._load_document(file_path)
+        load_time = time.time() - start_time
+        logger.info(f"Document loading completed in {load_time:.2f} seconds")
         
         if not docs:
             logger.warning(f"No content loaded from document: {file_path}")
@@ -105,19 +111,37 @@ class DocumentService:
                 metadata={"page": 1, "source": file_path, "error": "Content extraction failed"}
             )]
 
-        # Split the document into chunks
-        chunks = self.splitter.split_documents(docs)
-        logger.info(f"Document split into {len(chunks)} chunks")
+        # Split the document into chunks using a thread pool to avoid blocking
+        chunk_start = time.time()
+        loop = asyncio.get_event_loop()
         
-        if not chunks:
+        # Process documents in batches for better performance
+        batch_size = 10  # Process 10 documents at a time
+        all_chunks = []
+        
+        for i in range(0, len(docs), batch_size):
+            batch = docs[i:i+batch_size]
+            # Run chunking in a thread pool
+            batch_chunks = await loop.run_in_executor(
+                None, 
+                lambda b=batch: self.splitter.split_documents(b)
+            )
+            all_chunks.extend(batch_chunks)
+        
+        chunk_time = time.time() - chunk_start
+        logger.info(f"Document chunking completed in {chunk_time:.2f} seconds, created {len(all_chunks)} chunks")
+        
+        if not all_chunks:
             logger.warning(f"Document was loaded but no chunks were created: {file_path}")
             # Create a single chunk with the original content to ensure we have something
             return [LangchainDocument(
                 page_content="Document was processed but no meaningful chunks could be extracted.",
                 metadata={"page": 1, "source": file_path, "error": "Chunking failed"}
             )]
-            
-        return chunks
+        
+        total_time = time.time() - start_time
+        logger.info(f"Total document processing completed in {total_time:.2f} seconds")
+        return all_chunks
 
     async def _load_document(self, file_path: str) -> List[LangchainDocument]:
 

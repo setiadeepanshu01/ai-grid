@@ -117,10 +117,20 @@ export interface AnswerTableRule {
   length?: number;
 }
 
-export type SourceData = {
-  type: "document";
-  document: Document;
-};
+export type SourceData = 
+  | {
+      type: "document";
+      document: Document;
+    }
+  | {
+      type: "loading";
+      name: string;
+    }
+  | {
+      type: "error";
+      name: string;
+      error: string;
+    };
 
 export type CellKey = `${string}-${string}`;
 export type Document = z.infer<typeof documentSchema>;

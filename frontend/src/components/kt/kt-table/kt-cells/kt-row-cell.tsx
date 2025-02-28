@@ -38,7 +38,13 @@ export class KtRowCellTemplate implements CellTemplate<KtRowCell> {
       ...cell,
       type: "kt-row",
       row: cell.row,
-      text: cell.row.sourceData?.document.name ?? "",
+      text: cell.row.sourceData?.type === "document" 
+        ? cell.row.sourceData.document.name 
+        : cell.row.sourceData?.type === "loading"
+          ? `Loading: ${cell.row.sourceData.name}`
+          : cell.row.sourceData?.type === "error"
+            ? `Error: ${cell.row.sourceData.name}`
+            : "",
       value: NaN
     };
   }
@@ -116,6 +122,63 @@ function Content({ row }: { row: AnswerTableRow }) {
     );
   }
 
+  // Handle different source data types
+  if (row.sourceData.type === "loading") {
+    return (
+      <Group h="100%" pl="xs" gap="xs" wrap="nowrap">
+        <Loader size="xs" />
+        <Text>Loading: {row.sourceData.name}</Text>
+      </Group>
+    );
+  }
+  
+  if (row.sourceData.type === "error") {
+    return (
+      <CellPopover
+        target={
+          <Group h="100%" pl="xs" gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+            <IconFileText size={18} color="red" style={{ flexShrink: 0 }} />
+            <Text fw={500} truncate c="red">Error: {row.sourceData.name}</Text>
+          </Group>
+        }
+        dropdown={
+          <>
+            <Group gap="xs" justify="space-between">
+              <Text fw={500} c="red">Error: {row.sourceData.name}</Text>
+              <Group gap="xs">
+                <Tooltip label="Delete row">
+                  <ActionIcon color="red" onClick={handleDelete}>
+                    <IconTrash />
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
+            </Group>
+            <Divider mt="xs" mx="calc(var(--mantine-spacing-sm) * -1)" />
+            <Text mt="xs" c="red">{row.sourceData.error}</Text>
+            <div style={{ marginTop: 'var(--mantine-spacing-md)' }}>
+              <FileButton
+                accept="application/pdf,text/plain"
+                onChange={file => file && handleFillRow({ id: row.id, file })}
+              >
+                {fileProps => (
+                  <Button
+                    {...fileProps}
+                    fullWidth
+                    leftSection={
+                      isFillingRow ? <Loader size="xs" /> : <IconUpload />
+                    }
+                  >
+                    Try again
+                  </Button>
+                )}
+              </FileButton>
+            </div>
+          </>
+        }
+      />
+    );
+  }
+  
   if (row.sourceData.type === "document") {
     return (
       <>
@@ -123,7 +186,7 @@ function Content({ row }: { row: AnswerTableRow }) {
           target={
             <Group h="100%" pl="xs" gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
               <IconFileText size={18} opacity={0.7} style={{ flexShrink: 0 }} />
-              <Text fw={500} truncate>{row.sourceData?.document.name}</Text>
+              <Text fw={500} truncate>{row.sourceData.document.name}</Text>
             </Group>
           }
           dropdown={
@@ -185,4 +248,11 @@ function Content({ row }: { row: AnswerTableRow }) {
       </>
     );
   }
+  
+  // Default case - should not happen but TypeScript requires it
+  return (
+    <Group h="100%" pl="xs" gap="xs" wrap="nowrap">
+      <Text>Unknown source data type</Text>
+    </Group>
+  );
 }

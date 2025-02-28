@@ -24,7 +24,7 @@ import {
   toSingleType
 } from "./store.utils";
 import { AnswerTableRow, ResolvedEntity, SourceData, Store } from "./store.types";
-import { ApiError, runQuery, uploadFile } from "../api";
+import { ApiError, runBatchQueries, uploadFile } from "../api";
 import { notifications } from "../../utils/notifications";
 import { insertAfter, insertBefore, where } from "@utils/functions";
 
@@ -275,40 +275,97 @@ export const useStore = create<Store>()(
         let errorCount = 0;
         
         try {
-          for (const file of files) {
+          // Create a placeholder row for each file immediately
+          const placeholderRows: AnswerTableRow[] = [];
+          const rowIds: string[] = [];
+          
+          // Find existing empty rows first
+          const rows = getTable(activeTableId).rows;
+          const emptyRows = rows.filter(r => !r.sourceData);
+          
+          // Create placeholders for files
+          for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            let id: string;
+            
+            if (i < emptyRows.length) {
+              // Use existing empty row
+              id = emptyRows[i].id;
+              editTable(activeTableId, {
+                rows: where(rows, r => r.id === id, {
+                  sourceData: { 
+                    type: "loading", 
+                    name: file.name 
+                  } as any,
+                  cells: {}
+                })
+              });
+            } else {
+              // Create new row with loading state
+              id = cuid();
+              const newRow: AnswerTableRow = {
+                id,
+                sourceData: { 
+                  type: "loading", 
+                  name: file.name 
+                } as any,
+                hidden: false,
+                cells: {}
+              };
+              placeholderRows.push(newRow);
+            }
+            
+            rowIds.push(id);
+          }
+          
+          // Add all new placeholder rows at once
+          if (placeholderRows.length > 0) {
+            editTable(activeTableId, { 
+              rows: [...rows, ...placeholderRows] 
+            });
+          }
+          
+          // Process files in parallel
+          const uploadPromises = files.map(async (file, index) => {
+            const rowId = rowIds[index];
+            
             try {
+              // Upload the file
               const document = await uploadFile(file);
+              
+              // Update the row with actual document data
               const sourceData: SourceData = {
                 type: "document",
                 document
               };
               
-              const rows = getTable(activeTableId).rows;
-              const emptyRow = rows.find(r => !r.sourceData);
-              let id: string;
-              
-              if (emptyRow?.id) {
-                id = emptyRow.id;
-                editTable(activeTableId, {
-                  rows: where(rows, r => r.id === id, {
-                    sourceData,
-                    cells: {}
-                  })
-                });
-              } else {
-                const newRow: AnswerTableRow = {
-                  id: (id = cuid()),
+              editTable(activeTableId, {
+                rows: where(getTable(activeTableId).rows, r => r.id === rowId, {
                   sourceData,
-                  hidden: false,
                   cells: {}
-                };
-                editTable(activeTableId, { rows: [...rows, newRow] });
-              }
+                })
+              });
               
-              get().rerunRows([id]);
+              // Run queries for this row
+              get().rerunRows([rowId]);
+              
               successCount++;
+              return { success: true, file };
             } catch (error) {
-              console.error('Error uploading file:', error);
+              console.error(`Error uploading file ${file.name}:`, error);
+              
+              // Update the row to show error state
+              editTable(activeTableId, {
+                rows: where(getTable(activeTableId).rows, r => r.id === rowId, {
+                  sourceData: { 
+                    type: "error", 
+                    name: file.name,
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                  } as any,
+                  cells: {}
+                })
+              });
+              
               errorCount++;
               
               if (error instanceof ApiError) {
@@ -324,8 +381,13 @@ export const useStore = create<Store>()(
                   color: 'red'
                 });
               }
+              
+              return { success: false, file, error };
             }
-          }
+          });
+          
+          // Wait for all uploads to complete
+          await Promise.all(uploadPromises);
           
           if (successCount > 0) {
             notifications.show({
@@ -452,6 +514,10 @@ export const useStore = create<Store>()(
           })
         );
 
+        // If no valid cells to process, return early
+        if (batch.length === 0) return;
+
+        // Mark all cells as loading
         editTable(activeTableId, {
           loadingCells: {
             ...loadingCells,
@@ -459,7 +525,8 @@ export const useStore = create<Store>()(
           }
         });
 
-        for (const { key, row, column: column_ } of batch) {
+        // Prepare batch queries
+        const batchQueries = batch.map(({ row, column: column_ }) => {
           const column = cloneDeep(column_);
           let shouldRunQuery = true;
           let hasMatches = false;
@@ -478,113 +545,145 @@ export const useStore = create<Store>()(
             }
             column.query = column.query.replace(match, String(cell));
           }
+          
           if (!hasMatches && isNil(row.sourceData)) {
             shouldRunQuery = false;
           }
-          if (shouldRunQuery) {
-            // Inside runQuery.then callback in rerunCells:
-            runQuery(row, column, globalRules)
-              .then(({ answer, chunks, resolvedEntities }) => {
-                editCells(
-                  [{ rowId: row.id, columnId: column.id, cell: answer.answer }],
-                  activeTableId
-                );
-                
-                // Get current state
-                const currentTable = getTable(activeTableId);
-                
-                // Define a type for the entity parameter
-                type EntityLike = { 
-                  original: string | string[]; 
-                  resolved: string | string[]; 
-                  source?: { type: string; id: string }; 
-                  entityType?: string 
-                };
-                
-                // Helper to check if an entity matches any global rule patterns
-                const isGlobalEntity = (entity: EntityLike) => {
-                  const originalText = Array.isArray(entity.original) 
-                    ? entity.original.join(' ') 
-                    : entity.original;
-                    
-                  return globalRules.some(rule => 
-                    rule.type === 'resolve_entity' && 
-                    rule.options?.some(pattern => 
-                      originalText.toLowerCase().includes(pattern.toLowerCase())
-                    )
-                  );
-                };
-                
-                editTable(activeTableId, {
-                  chunks: { ...currentTable.chunks, [key]: chunks },
-                  loadingCells: omit(currentTable.loadingCells, key),
-                  columns: currentTable.columns.map(col => ({
-                    ...col,
-                    resolvedEntities: col.id === column.id 
-                      ? [
-                          ...(col.resolvedEntities || []),
-                          ...(resolvedEntities || [])
-                            .filter((entity: EntityLike) => !isGlobalEntity(entity))
-                            .map((entity: EntityLike) => ({
-                              ...entity,
-                              entityType: column.entityType,
-                              source: {
-                                type: 'column' as const,
-                                id: column.id
-                              }
-                            })) as ResolvedEntity[]
-                        ]
-                      : (col.resolvedEntities || [])
-                  })),
-                  globalRules: currentTable.globalRules.map(rule => ({
-                    ...rule,
-                    resolvedEntities: rule.type === 'resolve_entity'
-                      ? [
-                          ...(rule.resolvedEntities || []),
-                          ...(resolvedEntities || [])
-                            .filter((entity: EntityLike) => isGlobalEntity(entity))
-                            .map((entity: EntityLike) => ({
-                              ...entity,
-                              entityType: 'global',
-                              source: {
-                                type: 'global' as const,
-                                id: rule.id
-                              }
-                            })) as ResolvedEntity[]
-                        ]
-                      : (rule.resolvedEntities || [])
-                  }))
-                });
-              })
-              .catch(error => {
-                console.error('Error running query:', error);
-                
-                // Clear loading state for this cell
-                editTable(activeTableId, {
-                  loadingCells: omit(getTable(activeTableId).loadingCells, key)
-                });
-                
-                // Show error notification
-                if (error instanceof ApiError) {
-                  notifications.show({
-                    title: 'Query failed',
-                    message: `Failed to run query for ${column.entityType}: ${error.message}`,
-                    color: 'red'
-                  });
-                } else {
-                  notifications.show({
-                    title: 'Query failed',
-                    message: `Failed to run query for ${column.entityType}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                    color: 'red'
-                  });
-                }
-              });
-          } else {
-            editTable(activeTableId, {
-              loadingCells: omit(getTable(activeTableId).loadingCells, key)
-            });
-          }
+          
+          return { 
+            row, 
+            column, 
+            shouldRunQuery,
+            globalRules 
+          };
+        });
+
+        // Filter out queries that shouldn't run
+        const queriesToRun = batchQueries.filter(q => q.shouldRunQuery);
+        
+        // For queries that shouldn't run, clear their loading state immediately
+        const skipKeys = batch
+          .filter((_, i) => !batchQueries[i].shouldRunQuery)
+          .map(({ key }) => key);
+        
+        if (skipKeys.length > 0) {
+          editTable(activeTableId, {
+            loadingCells: omit(getTable(activeTableId).loadingCells, skipKeys)
+          });
         }
+        
+        // If no queries to run, return early
+        if (queriesToRun.length === 0) return;
+        
+        // Run batch queries in parallel
+        runBatchQueries(queriesToRun)
+          .then((responses: any[]) => {
+            // Process each response
+            responses.forEach((response: any, i: number) => {
+              const { row, column } = queriesToRun[i];
+              const key = getCellKey(row.id, column.id);
+              const { answer, chunks, resolvedEntities } = response;
+              
+              // Update cell value
+              editCells(
+                [{ rowId: row.id, columnId: column.id, cell: answer.answer }],
+                activeTableId
+              );
+              
+              // Get current state
+              const currentTable = getTable(activeTableId);
+              
+              // Define a type for the entity parameter
+              type EntityLike = { 
+                original: string | string[]; 
+                resolved: string | string[]; 
+                source?: { type: string; id: string }; 
+                entityType?: string 
+              };
+              
+              // Helper to check if an entity matches any global rule patterns
+              const isGlobalEntity = (entity: EntityLike) => {
+                const originalText = Array.isArray(entity.original) 
+                  ? entity.original.join(' ') 
+                  : entity.original;
+                  
+                return globalRules.some(rule => 
+                  rule.type === 'resolve_entity' && 
+                  rule.options?.some(pattern => 
+                    originalText.toLowerCase().includes(pattern.toLowerCase())
+                  )
+                );
+              };
+              
+              // Update table state with chunks and resolved entities
+              editTable(activeTableId, {
+                chunks: { ...currentTable.chunks, [key]: chunks },
+                loadingCells: omit(currentTable.loadingCells, key),
+                columns: currentTable.columns.map(col => ({
+                  ...col,
+                  resolvedEntities: col.id === column.id 
+                    ? [
+                        ...(col.resolvedEntities || []),
+                        ...(resolvedEntities || [])
+                          .filter((entity: EntityLike) => !isGlobalEntity(entity))
+                          .map((entity: EntityLike) => ({
+                            ...entity,
+                            entityType: column.entityType,
+                            source: {
+                              type: 'column' as const,
+                              id: column.id
+                            }
+                          })) as ResolvedEntity[]
+                      ]
+                    : (col.resolvedEntities || [])
+                })),
+                globalRules: currentTable.globalRules.map(rule => ({
+                  ...rule,
+                  resolvedEntities: rule.type === 'resolve_entity'
+                    ? [
+                        ...(rule.resolvedEntities || []),
+                        ...(resolvedEntities || [])
+                          .filter((entity: EntityLike) => isGlobalEntity(entity))
+                          .map((entity: EntityLike) => ({
+                            ...entity,
+                            entityType: 'global',
+                            source: {
+                              type: 'global' as const,
+                              id: rule.id
+                            }
+                          })) as ResolvedEntity[]
+                      ]
+                    : (rule.resolvedEntities || [])
+                }))
+              });
+            });
+          })
+          .catch((error: any) => {
+            console.error('Error running batch queries:', error);
+            
+            // Clear loading state for all cells in the batch
+            editTable(activeTableId, {
+              loadingCells: omit(
+                getTable(activeTableId).loadingCells, 
+                queriesToRun.map(({ row, column }) => getCellKey(row.id, column.id))
+              )
+            });
+            
+            // Show error notification
+            if (error instanceof ApiError) {
+              notifications.show({
+                title: 'Batch query failed',
+                message: error.message,
+                color: 'red'
+              });
+            } else {
+              notifications.show({
+                title: 'Batch query failed',
+                message: error instanceof Error ? error.message : 'Unknown error',
+                color: 'red'
+              });
+            }
+          });
       },
 
       clearCells: cells => {

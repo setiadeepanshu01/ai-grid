@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import uuid
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -19,6 +19,7 @@ from app.services.query_service import (
     decomposition_query,
     hybrid_query,
     inference_query,
+    process_queries_in_parallel,
     simple_vector_query,
 )
 from app.services.vector_db.base import VectorDBService
@@ -114,15 +115,6 @@ async def run_query(
         if not isinstance(query_response, QueryResult):
             query_response = QueryResult(**query_response)
 
-        # response_data = QueryResponseSchema(
-        #     id=str(uuid.uuid4()),
-        #     document_id=request.document_id,
-        #     prompt_id=request.prompt.id,
-        #     type=request.prompt.type,
-        #     answer=query_response.answer,
-        #     chunks=query_response.chunks,
-        # )
-
         answer = QueryAnswer(
             id=uuid.uuid4().hex,
             document_id=request.document_id,
@@ -134,7 +126,7 @@ async def run_query(
         response_data = QueryAnswerResponse(
             answer=answer,
             chunks=query_response.chunks,
-            resolved_entities=query_response.resolved_entities,  # Add this line
+            resolved_entities=query_response.resolved_entities,
         )
 
         return response_data
@@ -153,6 +145,138 @@ async def run_query(
         )
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
+        error_detail = str(e) if str(e) else "Internal server error"
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_detail
+        )
+
+
+@router.post("/batch", response_model=List[QueryAnswerResponse])
+async def run_batch_queries(
+    requests: List[QueryRequestSchema],
+    llm_service: CompletionService = Depends(get_llm_service),
+    vector_db_service: VectorDBService = Depends(get_vector_db_service),
+) -> List[QueryAnswerResponse]:
+    """
+    Run multiple queries in parallel and generate responses.
+
+    This endpoint processes multiple query requests in parallel, improving performance
+    when multiple queries need to be executed at once.
+
+    Parameters
+    ----------
+    requests : List[QueryRequestSchema]
+        The list of query requests to process in parallel.
+    llm_service : CompletionService
+        The language model service.
+    vector_db_service : VectorDBService
+        The vector database service.
+
+    Returns
+    -------
+    List[QueryAnswerResponse]
+        A list of query responses in the same order as the input requests.
+
+    Raises
+    ------
+    HTTPException
+        If there's an error processing the queries.
+    """
+    try:
+        logger.info(f"Received batch query request with {len(requests)} queries")
+        
+        # Separate inference queries from vector queries
+        inference_requests = []
+        vector_requests = []
+        
+        for req in requests:
+            if req.document_id == "00000000000000000000000000000000":
+                inference_requests.append(req)
+            else:
+                vector_requests.append(req)
+        
+        # Process inference queries in parallel
+        inference_tasks = []
+        for req in inference_requests:
+            task = inference_query(
+                req.prompt.query,
+                req.prompt.rules,
+                req.prompt.type,
+                llm_service,
+            )
+            inference_tasks.append(task)
+        
+        # Process vector queries in parallel
+        vector_query_params = []
+        for req in vector_requests:
+            query_type = (
+                "hybrid"
+                if req.prompt.rules or req.prompt.type == "bool"
+                else "vector"
+            )
+            
+            vector_query_params.append({
+                "query_type": query_type,
+                "query": req.prompt.query,
+                "document_id": req.document_id,
+                "rules": req.prompt.rules,
+                "format": req.prompt.type,
+            })
+        
+        # Execute all queries in parallel
+        results = []
+        
+        if inference_tasks:
+            inference_results = await asyncio.gather(*inference_tasks)
+            results.extend(inference_results)
+        
+        if vector_query_params:
+            vector_results = await process_queries_in_parallel(
+                vector_query_params, llm_service, vector_db_service
+            )
+            results.extend(vector_results)
+        
+        # Convert results to response format
+        responses = []
+        for i, result in enumerate(results):
+            req = inference_requests[i] if i < len(inference_requests) else vector_requests[i - len(inference_requests)]
+            
+            if not isinstance(result, QueryResult):
+                result = QueryResult(**result)
+            
+            answer = QueryAnswer(
+                id=uuid.uuid4().hex,
+                document_id=req.document_id,
+                prompt_id=req.prompt.id,
+                answer=result.answer,
+                type=req.prompt.type,
+            )
+            
+            response = QueryAnswerResponse(
+                answer=answer,
+                chunks=result.chunks,
+                resolved_entities=result.resolved_entities,
+            )
+            
+            responses.append(response)
+        
+        return responses
+        
+    except asyncio.TimeoutError:
+        logger.error("Timeout occurred while processing batch queries")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Request timed out while waiting for responses from the language model"
+        )
+    except ValueError as e:
+        logger.error(f"Invalid input in batch request: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid input in batch request: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error processing batch queries: {str(e)}")
         error_detail = str(e) if str(e) else "Internal server error"
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

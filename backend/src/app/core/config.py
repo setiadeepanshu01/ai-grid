@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     index_name: str = "milvus"
 
     # MILVUS CONFIG
-    milvus_db_uri: str = "./milvus_demo.db"
+    milvus_db_uri: str = "./milvus_db.db"
     milvus_db_token: str = "root:Milvus"
 
     # QDRANT CONFIG

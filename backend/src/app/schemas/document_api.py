@@ -1,6 +1,6 @@
 """Document schemas for API requests and responses."""
 
-from typing import Annotated
+from typing import Annotated, List
 
 from pydantic import BaseModel, Field
 
@@ -30,3 +30,12 @@ class DeleteDocumentResponseSchema(BaseModel):
     id: str
     status: str
     message: str
+
+
+class BatchUploadResponseSchema(BaseModel):
+    """Schema for batch document upload response."""
+
+    documents: List[DocumentResponseSchema]
+    total_files: int
+    successful_files: int
+    failed_files: int

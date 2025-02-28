@@ -13,7 +13,15 @@ export const KtDownload = {
       let csvData = `Document,${columns.join(",")}\n`;
 
       for (const row of data.rows) {
-        const documentName = row.sourceData?.document.name ?? "Unknown";
+        // Handle different source data types
+        let documentName = "Unknown";
+        if (row.sourceData?.type === "document") {
+          documentName = row.sourceData.document.name;
+        } else if (row.sourceData?.type === "loading") {
+          documentName = `Loading: ${row.sourceData.name}`;
+        } else if (row.sourceData?.type === "error") {
+          documentName = `Error: ${row.sourceData.name}`;
+        }
 
         const cellValues = data.columns.map(col => {
           const cell = row.cells[col.id];

@@ -1,5 +1,6 @@
 """Query service."""
 
+import asyncio
 import logging
 import re
 from typing import Any, Awaitable, Callable, Dict, List, Union
@@ -114,10 +115,12 @@ async def process_query(
     """Process the query based on the specified type."""
     search_method = get_search_method(query_type, vector_db_service)
 
+    # Step 1: Get search response
     search_response = await search_method(query, document_id, rules)
     chunks = extract_chunks(search_response)
     concatenated_chunks = " ".join(chunk.content for chunk in chunks)
 
+    # Step 2: Generate response from LLM
     answer = await generate_response(
         llm_service, query, concatenated_chunks, rules, format
     )
@@ -131,7 +134,6 @@ async def process_query(
     result_chunks = []
 
     if format in ["str", "str_array"]:
-
         # Extract and apply keyword replacements from all resolve_entity rules
         resolve_entity_rules = [
             rule for rule in rules if rule.type == "resolve_entity"
@@ -187,6 +189,51 @@ async def process_query(
         ),
     )
 
+
+# New function to process multiple queries in parallel
+async def process_queries_in_parallel(
+    queries: List[Dict[str, Any]],
+    llm_service: CompletionService,
+    vector_db_service: Any,
+) -> List[QueryResult]:
+    """
+    Process multiple queries in parallel.
+    
+    Parameters
+    ----------
+    queries : List[Dict[str, Any]]
+        List of query parameters, each containing:
+        - query_type: QueryType
+        - query: str
+        - document_id: str
+        - rules: List[Rule]
+        - format: FormatType
+    llm_service : CompletionService
+        The language model service.
+    vector_db_service : Any
+        The vector database service.
+        
+    Returns
+    -------
+    List[QueryResult]
+        List of query results in the same order as the input queries.
+    """
+    # Create tasks for each query
+    tasks = [
+        process_query(
+            q["query_type"],
+            q["query"],
+            q["document_id"],
+            q["rules"],
+            q["format"],
+            llm_service,
+            vector_db_service,
+        )
+        for q in queries
+    ]
+    
+    # Execute all tasks in parallel and return results
+    return await asyncio.gather(*tasks)
 
 # Convenience functions for specific query types
 async def decomposition_query(

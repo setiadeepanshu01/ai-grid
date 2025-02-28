@@ -54,22 +54,24 @@ export function KtDocumentPreview({ row, onClose }: DocumentPreviewProps) {
       return;
     }
     
-    // Otherwise, we need to simulate loading the document content
+    // Otherwise, just show basic document info
     setLoading(true);
-    setError(null);
     
-    // Simulate loading document content
+    // Show document info after a brief loading period
     const timer = setTimeout(() => {
       setLoading(false);
       
-      // If we don't have real content, show a placeholder message
+      // Show basic document info
       const pageCount = document.page_count || 'unknown number of';
       setContent([
-        `This is a preview of document: ${document.name}`,
-        `To see actual document content, extract data from this document first.`,
-        `The document has ${pageCount} pages.`
+        `Document Name: ${document.name}`,
+        `Pages: ${pageCount}`,
+        `Author: ${document.author || 'Unknown'}`,
+        `Tag: ${document.tag || 'None'}`,
+        '',
+        'Note: To see the full document content, run a query on this document first.'
       ]);
-    }, 1000);
+    }, 500);
     
     return () => clearTimeout(timer);
   }, [document, chunks]);
