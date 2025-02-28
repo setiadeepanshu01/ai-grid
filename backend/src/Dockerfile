@@ -75,6 +75,8 @@ RUN --mount=type=cache,target=/var/cache/apt \
     libsm6 \
     libxrender1 \
     libxext6 \
+    tesseract-ocr \
+    tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the project and unstructured PDF dependencies
