@@ -1,97 +1,54 @@
 #!/bin/bash
 
-# AI Grid Deployment Script for Render
-# This script helps prepare your project for deployment to Render
+# Script to deploy changes to Render via GitHub
 
-echo "=== AI Grid Deployment Preparation ==="
-echo "This script will help you prepare your project for deployment to Render."
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
 
-# Check if git is installed
-if ! command -v git &> /dev/null; then
-    echo "Error: Git is not installed. Please install Git first."
-    exit 1
+echo -e "${YELLOW}Starting deployment process...${NC}"
+
+# Check if there are any changes to commit
+if [[ -z $(git status -s) ]]; then
+  echo -e "${RED}No changes to commit. Exiting.${NC}"
+  exit 1
 fi
 
-# Check if we're in a git repository
-if [ ! -d .git ]; then
-    echo "Initializing Git repository..."
-    git init
-    
-    # Create .gitignore if it doesn't exist
-    if [ ! -f .gitignore ]; then
-        echo "Creating .gitignore file..."
-        cat > .gitignore << EOF
-# Environment variables
-.env
-*.env
+# Show the changes that will be committed
+echo -e "${YELLOW}Changes to be committed:${NC}"
+git status -s
 
-# Node modules
-node_modules/
-dist/
-build/
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-.pytest_cache/
-
-# OS specific
-.DS_Store
-Thumbs.db
-EOF
-    fi
+# Ask for confirmation
+read -p "Do you want to commit and push these changes? (y/n) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+  echo -e "${RED}Deployment cancelled.${NC}"
+  exit 1
 fi
 
-# Check for .env file in backend
-if [ ! -f backend/.env ]; then
-    echo "Creating .env file from .env.example..."
-    if [ -f backend/.env.example ]; then
-        cp backend/.env.example backend/.env
-        echo "Please edit backend/.env to add your API keys and other configuration."
-    else
-        echo "Warning: No .env.example file found. Please create backend/.env manually."
-    fi
+# Ask for commit message
+echo -e "${YELLOW}Enter commit message:${NC}"
+read -r commit_message
+
+# Commit the changes
+echo -e "${YELLOW}Committing changes...${NC}"
+git add .
+git commit -m "$commit_message"
+
+# Push to GitHub
+echo -e "${YELLOW}Pushing to GitHub...${NC}"
+git push
+
+# Check if push was successful
+if [ $? -eq 0 ]; then
+  echo -e "${GREEN}Changes pushed successfully!${NC}"
+  echo -e "${YELLOW}Render will automatically deploy the changes.${NC}"
+  echo -e "${YELLOW}You can check the deployment status at: https://dashboard.render.com/${NC}"
+else
+  echo -e "${RED}Failed to push changes to GitHub.${NC}"
+  exit 1
 fi
 
-# Ensure render.yaml exists
-if [ ! -f render.yaml ]; then
-    echo "Error: render.yaml not found. This file is required for Render deployment."
-    exit 1
-fi
-
-# Check for Milvus Lite configuration
-if grep -q "VECTOR_DB_PROVIDER=milvus" backend/.env 2>/dev/null; then
-    echo "Milvus Lite configuration detected."
-    echo "Ensuring persistent disk is configured in render.yaml..."
-    
-    if ! grep -q "disk:" render.yaml || ! grep -q "mountPath: /data" render.yaml; then
-        echo "Warning: Persistent disk configuration for Milvus Lite may be missing in render.yaml."
-        echo "Please ensure the backend service has a disk configuration with mountPath: /data"
-    else
-        echo "Persistent disk configuration for Milvus Lite found in render.yaml."
-    fi
-fi
-
-echo ""
-echo "=== Deployment Preparation Complete ==="
-echo ""
-echo "Next steps:"
-echo "1. Edit backend/.env to add your API keys"
-echo "2. Commit your changes: git add . && git commit -m 'Prepare for deployment'"
-echo "3. Create a repository on GitHub/GitLab"
-echo "4. Add remote: git remote add origin <your-repository-url>"
-echo "5. Push your code: git push -u origin main"
-echo "6. Go to Render.com and create a new Blueprint using your repository"
-echo ""
-echo "For more detailed instructions, see DEPLOYMENT.md"
-
-# Make the script executable
-chmod +x deploy.sh
+echo -e "${GREEN}Deployment process completed!${NC}"
