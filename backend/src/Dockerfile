@@ -70,6 +70,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     libmagic1 \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the project and unstructured PDF dependencies
