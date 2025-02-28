@@ -71,6 +71,10 @@ RUN --mount=type=cache,target=/var/cache/apt \
     poppler-utils \
     libmagic1 \
     libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the project and unstructured PDF dependencies
