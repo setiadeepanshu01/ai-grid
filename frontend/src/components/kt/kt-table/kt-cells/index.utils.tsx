@@ -114,7 +114,6 @@ export function CellPopover({
         </Box>
       </Popover.Target>
       <Popover.Dropdown
-        onClick={e => e.stopPropagation()}
         onPointerDown={e => e.stopPropagation()}
         onKeyDown={e => e.stopPropagation()}
         className={classes.dropdown}

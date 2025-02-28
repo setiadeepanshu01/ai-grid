@@ -121,10 +121,12 @@ export function KtColumnSettings({
               data={ruleOptions}
               comboboxProps={{ withinPortal: false }}
               value={rule.type}
-              onChange={type =>
-                type &&
-                handleRuleTypeChange(rule, type as AnswerTableRule["type"])
-              }
+              onChange={type => {
+                if (type) {
+                  handleRuleTypeChange(rule, type as AnswerTableRule["type"]);
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
             />
             {rule.type === "max_length" ? (
               <NumberInput
@@ -138,6 +140,7 @@ export function KtColumnSettings({
                     length: isString(length) ? 1 : length
                   })
                 }
+                onClick={(e) => e.stopPropagation()}
               />
             ) : (
               <TagsInput
@@ -145,10 +148,17 @@ export function KtColumnSettings({
                 placeholder="Values"
                 value={rule.options ?? []}
                 onChange={options => handleRuleChange(rule, { options })}
+                onClick={(e) => e.stopPropagation()}
               />
             )}
             <Info>{ruleInfo[rule.type]}</Info>
-            <ActionIcon color="red" onClick={() => handleDeleteRule(rule)}>
+            <ActionIcon 
+              color="red" 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteRule(rule);
+              }}
+            >
               <IconTrash />
             </ActionIcon>
           </Group>
@@ -157,7 +167,14 @@ export function KtColumnSettings({
       <Alert mt="xs">Global rules may also apply to this column.</Alert>
       <Divider mt="xs" />
       <Group mt="xs">
-        <Button flex={1} leftSection={<IconPlus />} onClick={handleAddRule}>
+        <Button 
+          flex={1} 
+          leftSection={<IconPlus />} 
+          onClick={(e) => {
+            e.stopPropagation();
+            handleAddRule();
+          }}
+        >
           Add rule
         </Button>
         <Button
@@ -165,7 +182,10 @@ export function KtColumnSettings({
           color="red"
           variant="light"
           leftSection={<IconTrash />}
-          onClick={() => handleSet({ rules: [] })}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSet({ rules: [] });
+          }}
         >
           Clear
         </Button>
@@ -227,7 +247,10 @@ export function KtColumnSettings({
         menu={typeOptions.map(({ value: type, label, icon: Icon }) => (
           <Menu.Item
             key={type}
-            onClick={() => handleSet({ type })}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSet({ type });
+            }}
             leftSection={<Icon />}
           >
             {label}
@@ -243,7 +266,10 @@ export function KtColumnSettings({
         menu={generateOptions.map(({ value: generate, label, icon: Icon }) => (
           <Menu.Item
             key={String(generate)}
-            onClick={() => handleSet({ generate })}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleSet({ generate });
+            }}
             leftSection={<Icon />}
           >
             {label}

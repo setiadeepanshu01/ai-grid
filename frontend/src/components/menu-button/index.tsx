@@ -36,10 +36,15 @@ export function MenuButton({
       offset={2}
       withinPortal={false}
       disabled={disabled}
+      closeOnItemClick={true}
       {...menuProps}
     >
       <Menu.Target>
-        <Box {...props} className={cn(classes.menuButton, props.className)}>
+        <Box 
+          {...props} 
+          className={cn(classes.menuButton, props.className)}
+          onClick={(e) => e.stopPropagation()}
+        >
           <Input.Label>{label}</Input.Label>
           <Group>
             <Box>{rightSection}</Box>
