@@ -34,7 +34,7 @@ export function MenuButton({
     <Menu
       position="right-start"
       offset={2}
-      withinPortal={false}
+      withinPortal={true}
       disabled={disabled}
       closeOnItemClick={true}
       {...menuProps}

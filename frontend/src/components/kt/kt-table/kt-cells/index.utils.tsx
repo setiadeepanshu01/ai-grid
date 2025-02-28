@@ -24,8 +24,12 @@ const setupGlobalHandlers = () => {
     const isInsidePopover = !!(e.target as Element).closest(`.${classes.dropdown}`) || 
                             !!(e.target as Element).closest(`.${classes.target}`);
     
-    // If click is inside the popover, don't close it
-    if (isInsidePopover) return;
+    // Check if the click is inside any Mantine Menu component
+    const isInsideMantineMenu = !!(e.target as Element).closest('.mantine-Menu-dropdown') || 
+                               !!(e.target as Element).closest('.mantine-Menu-item');
+    
+    // If click is inside the popover or a Mantine Menu, don't close it
+    if (isInsidePopover || isInsideMantineMenu) return;
     
     // If click is outside, close the popover
     store.setActivePopover(null);
@@ -102,6 +106,7 @@ export function CellPopover({
       width="target"
       position="bottom-start"
       transitionProps={{ transition: "scale-y" }}
+      withinPortal={true}
     >
       <Popover.Target>
         <Box
