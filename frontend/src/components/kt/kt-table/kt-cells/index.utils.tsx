@@ -1,9 +1,49 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useId } from "react";
 import { Box, Popover, ScrollArea } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
 import { Wrap } from "@components";
 import { cn } from "@utils/functions";
+import { useStore } from "@config/store";
 import classes from "./index.module.css";
+
+// Add global handlers to manage popovers
+// This is done once at the module level to avoid adding multiple listeners
+let isGlobalHandlersAdded = false;
+const setupGlobalHandlers = () => {
+  if (isGlobalHandlersAdded) return;
+  
+  // Click handler to close popovers when clicking outside
+  document.addEventListener('click', (e) => {
+    // Check if the click is outside any popover or target
+    const isOutsidePopover = !e.target || 
+      (!(e.target as Element).closest(`.${classes.dropdown}`) && 
+       !(e.target as Element).closest(`.${classes.target}`));
+    
+    if (isOutsidePopover) {
+      // Close any open popover
+      const store = useStore.getState();
+      if (store.activePopoverId) {
+        store.setActivePopover(null);
+      }
+    }
+  });
+  
+  // Keyboard handler to close popovers when Escape is pressed
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const store = useStore.getState();
+      if (store.activePopoverId) {
+        store.setActivePopover(null);
+      }
+    }
+  });
+  
+  isGlobalHandlersAdded = true;
+};
+
+// Setup the global handlers
+if (typeof document !== 'undefined') {
+  setupGlobalHandlers();
+}
 
 interface CellPopoverProps {
   monoClick?: boolean;
@@ -20,11 +60,40 @@ export function CellPopover({
   dropdown,
   scrollable
 }: CellPopoverProps) {
-  const [opened, handlers] = useDisclosure(false);
+  // Generate a unique ID for this popover
+  const id = useId();
+  
+  // Use global state to track which popover is active
+  const activePopoverId = useStore(state => state.activePopoverId);
+  const setActivePopover = useStore(state => state.setActivePopover);
+  
+  // Determine if this popover is open
+  const opened = activePopoverId === id;
+  
+  // Close popover when component unmounts
+  useEffect(() => {
+    return () => {
+      if (activePopoverId === id) {
+        setActivePopover(null);
+      }
+    };
+  }, [activePopoverId, id, setActivePopover]);
+  
+  // Handle opening and closing
+  const handleOpen = () => {
+    setActivePopover(id);
+  };
+  
+  const handleClose = () => {
+    if (activePopoverId === id) {
+      setActivePopover(null);
+    }
+  };
+  
   return (
     <Popover
       opened={opened}
-      onClose={handlers.close}
+      onClose={handleClose}
       offset={{ mainAxis: mainAxisOffset, crossAxis: -1 }}
       width="target"
       position="bottom-start"
@@ -34,8 +103,8 @@ export function CellPopover({
         <Box
           className={cn(classes.target, opened && classes.active)}
           {...(monoClick
-            ? { onClick: handlers.open }
-            : { onDoubleClick: handlers.open })}
+            ? { onClick: handleOpen }
+            : { onDoubleClick: handleOpen })}
         >
           {target}
         </Box>

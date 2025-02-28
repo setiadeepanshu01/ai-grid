@@ -66,11 +66,12 @@ export function getBlankTable(name?: string): AnswerTable {
   };
 }
 
-export function getInitialData(): Pick<Store, "tables" | "activeTableId"> {
+export function getInitialData(): Pick<Store, "tables" | "activeTableId" | "activePopoverId"> {
   const initialTable = getBlankTable();
   return {
     tables: [initialTable],
-    activeTableId: initialTable.id
+    activeTableId: initialTable.id,
+    activePopoverId: null
   };
 }
 

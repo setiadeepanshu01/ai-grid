@@ -33,9 +33,14 @@ export const useStore = create<Store>()(
     (set, get) => ({
       colorScheme: "light",
       ...getInitialData(),
+      activePopoverId: null,
 
       toggleColorScheme: () => {
         set({ colorScheme: get().colorScheme === "light" ? "dark" : "light" });
+      },
+      
+      setActivePopover: (id: string | null) => {
+        set({ activePopoverId: id });
       },
 
       getTable: (id = get().activeTableId) => {
@@ -807,7 +812,11 @@ export const useStore = create<Store>()(
     }),
     {
       name: "store",
-      version: 9
+      version: 9,
+      partialize: (state) => ({
+        ...state,
+        activePopoverId: null // Don't persist active popover state
+      })
     }
   )
 );

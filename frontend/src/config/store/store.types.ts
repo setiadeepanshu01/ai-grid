@@ -5,8 +5,10 @@ export interface Store {
   colorScheme: "light" | "dark";
   tables: AnswerTable[];
   activeTableId: string;
+  activePopoverId: string | null;
 
   toggleColorScheme: () => void;
+  setActivePopover: (id: string | null) => void;
 
   getTable: (id?: string) => AnswerTable;
   addTable: (name: string) => void;
