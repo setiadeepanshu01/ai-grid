@@ -5,6 +5,7 @@ services:
     env: docker
     dockerfilePath: ./backend/src/Dockerfile
     dockerContext: ./backend
+    buildCommand: DOCKER_BUILDKIT=1 docker build -t ai-grid-backend:latest -f ./backend/src/Dockerfile ./backend
     envVars:
       - key: ENVIRONMENT
         value: production
@@ -14,6 +15,8 @@ services:
         sync: false
       - key: MILVUS_DB_URI
         value: /data/milvus_db.db
+      - key: DOCKER_BUILDKIT
+        value: "1"
     healthCheckPath: /ping
     disk:
       name: milvus-data
@@ -26,7 +29,10 @@ services:
     env: docker
     dockerfilePath: ./frontend/Dockerfile
     dockerContext: ./frontend
+    buildCommand: DOCKER_BUILDKIT=1 docker build -t ai-grid:latest -f ./frontend/Dockerfile ./frontend
     envVars:
       - key: VITE_API_URL
         value: https://ai-grid-backend.onrender.com
+      - key: DOCKER_BUILDKIT
+        value: "1"
     healthCheckPath: /
