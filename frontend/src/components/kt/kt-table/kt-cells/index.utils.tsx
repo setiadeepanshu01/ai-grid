@@ -13,18 +13,22 @@ const setupGlobalHandlers = () => {
   
   // Click handler to close popovers when clicking outside
   document.addEventListener('click', (e) => {
-    // Check if the click is outside any popover or target
-    const isOutsidePopover = !e.target || 
-      (!(e.target as Element).closest(`.${classes.dropdown}`) && 
-       !(e.target as Element).closest(`.${classes.target}`));
+    // Don't process if the target is null
+    if (!e.target) return;
     
-    if (isOutsidePopover) {
-      // Close any open popover
-      const store = useStore.getState();
-      if (store.activePopoverId) {
-        store.setActivePopover(null);
-      }
-    }
+    // Get the active popover element
+    const store = useStore.getState();
+    if (!store.activePopoverId) return;
+    
+    // Check if the click is inside the active popover's dropdown or target
+    const isInsidePopover = !!(e.target as Element).closest(`.${classes.dropdown}`) || 
+                            !!(e.target as Element).closest(`.${classes.target}`);
+    
+    // If click is inside the popover, don't close it
+    if (isInsidePopover) return;
+    
+    // If click is outside, close the popover
+    store.setActivePopover(null);
   });
   
   // Keyboard handler to close popovers when Escape is pressed
@@ -110,6 +114,7 @@ export function CellPopover({
         </Box>
       </Popover.Target>
       <Popover.Dropdown
+        onClick={e => e.stopPropagation()}
         onPointerDown={e => e.stopPropagation()}
         onKeyDown={e => e.stopPropagation()}
         className={classes.dropdown}
