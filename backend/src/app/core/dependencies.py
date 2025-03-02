@@ -1,61 +1,57 @@
-"""Dependencies for the application."""
+"""Dependencies for the application using FastAPI app state for singletons."""
 
-from fastapi import Depends
+import logging
+
+from fastapi import Depends, Request
 
 from app.core.config import Settings, get_settings
 from app.services.document_service import DocumentService
 from app.services.embedding.base import EmbeddingService
-from app.services.embedding.factory import EmbeddingServiceFactory
 from app.services.llm.base import CompletionService
-from app.services.llm.factory import CompletionServiceFactory
 from app.services.vector_db.base import VectorDBService
-from app.services.vector_db.factory import VectorDBFactory
+
+logger = logging.getLogger(__name__)
 
 
 def get_llm_service(
+    request: Request,
     settings: Settings = Depends(get_settings),
 ) -> CompletionService:
-    """Get the LLM service for the application."""
-    llm_service = CompletionServiceFactory.create_service(settings)
-    if llm_service is None:
-        raise ValueError(
-            f"Failed to create LLM service for provider: {settings.llm_provider}"
-        )
-    return llm_service
+    """Get the LLM service from application state."""
+    if not hasattr(request.app.state, "llm_service"):
+        raise ValueError("LLM service not initialized in application state")
+    
+    return request.app.state.llm_service
 
 
 def get_embedding_service(
+    request: Request,
     settings: Settings = Depends(get_settings),
 ) -> EmbeddingService:
-    """Get the embedding service for the application."""
-    embedding_service = EmbeddingServiceFactory.create_service(settings)
-    if embedding_service is None:
-        raise ValueError(
-            f"Failed to create embedding service for provider: {settings.embedding_provider}"
-        )
-    return embedding_service
+    """Get the embedding service from application state."""
+    if not hasattr(request.app.state, "embedding_service"):
+        raise ValueError("Embedding service not initialized in application state")
+    
+    return request.app.state.embedding_service
 
 
 def get_vector_db_service(
+    request: Request,
     settings: Settings = Depends(get_settings),
-    embedding_service: EmbeddingService = Depends(get_embedding_service),
-    llm_service: CompletionService = Depends(get_llm_service),
 ) -> VectorDBService:
-    """Get the vector database service for the application."""
-    vector_db_service = VectorDBFactory.create_vector_db_service(
-        embedding_service, llm_service, settings
-    )
-    if vector_db_service is None:
-        raise ValueError(
-            f"Failed to create vector database service for provider: {settings.vector_db_provider}"
-        )
-    return vector_db_service
+    """Get the vector database service from application state."""
+    if not hasattr(request.app.state, "vector_db_service"):
+        raise ValueError("Vector DB service not initialized in application state")
+    
+    return request.app.state.vector_db_service
 
 
 def get_document_service(
+    request: Request,
     settings: Settings = Depends(get_settings),
-    vector_db_service: VectorDBService = Depends(get_vector_db_service),
-    llm_service: CompletionService = Depends(get_llm_service),
 ) -> DocumentService:
-    """Get the document service for the application."""
-    return DocumentService(vector_db_service, llm_service, settings)
+    """Get the document service from application state."""
+    if not hasattr(request.app.state, "document_service"):
+        raise ValueError("Document service not initialized in application state")
+    
+    return request.app.state.document_service

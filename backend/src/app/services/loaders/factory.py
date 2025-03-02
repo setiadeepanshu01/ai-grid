@@ -8,6 +8,9 @@ from app.services.loaders.base import LoaderService
 from app.services.loaders.pypdf_service import PDFLoader
 from app.services.loaders.pymupdf_service import PyMuPDFLoaderService
 from app.services.loaders.enhanced_pdf_service import EnhancedPDFLoader
+from app.services.loaders.textract_service import TextractLoader
+from app.services.loaders.gpt4o_pdf_service import GPT4OPDFLoader
+from app.services.loaders.simple_pdf_service import SimplePDFLoader
 
 logger = logging.getLogger(__name__)
 
@@ -36,23 +39,33 @@ class LoaderFactory:
             if not UNSTRUCTURED_AVAILABLE:
                 logger.warning(
                     "The 'unstructured' package is not installed. "
+                    "Please install it with `pip install unstructured`"
                 )
                 return None
-            if not settings.unstructured_api_key:
-                raise ValueError(
-                    "Unstructured API key is required when using the unstructured loader"
-                )
-            logger.info("Using UnstructuredLoader")
+            logger.info("Using UnstructuredLoader with local processing")
             return UnstructuredLoader(settings=settings)
         elif loader_type == "pypdf":
             logger.info("Using PyPDFLoader")
             return PDFLoader()
         elif loader_type == "pymupdf":
-            logger.info("Using PyMuPDFLoader")
-            return PyMuPDFLoaderService()
+            logger.info("Using PyMuPDFLoader with enhanced OCR capabilities")
+            return PyMuPDFLoaderService(settings=settings)
+        elif loader_type == "gpt4o_pdf":
+            logger.info("Using GPT-4o enhanced PDF loader")
+            if not settings.openai_api_key:
+                logger.warning("OpenAI API key not provided for GPT-4o PDF loader")
+            return GPT4OPDFLoader(settings=settings)
         elif loader_type == "enhanced_pdf":
             logger.info("Using EnhancedPDFLoader")
             return EnhancedPDFLoader()
+        elif loader_type == "textract":
+            logger.info("Using Amazon Textract Loader")
+            if not settings.aws_access_key_id or not settings.aws_secret_access_key:
+                logger.warning("AWS credentials not provided for Textract loader")
+            return TextractLoader(settings=settings)
+        elif loader_type == "simple_pdf":
+            logger.info("Using SimplePDFLoader")
+            return SimplePDFLoader()
         else:
             logger.warning(f"No loader found for type: {loader_type}")
             return None

@@ -65,28 +65,30 @@ COPY pyproject.toml ./
 RUN pip install --no-cache-dir --no-deps /wheels/* && \
     pip install --no-cache-dir pydantic==2.10.6 pydantic-core==2.27.2
 
-# Install additional system dependencies for unstructured - only what's needed for PDF processing
+# Install system dependencies for PDF processing - only what's actually needed
+# poppler-utils: For PDF processing
+# libmagic1: For file type detection
+# libgl1: For image processing
+# libglib2.0-0: Required by PyMuPDF
+# tesseract-ocr: For OCR (only if needed)
+# tesseract-ocr-eng: English language for OCR
 RUN --mount=type=cache,target=/var/cache/apt \
     apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils \
     libmagic1 \
     libgl1 \
     libglib2.0-0 \
-    libsm6 \
-    libxrender1 \
-    libxext6 \
     tesseract-ocr \
     tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
-# Install the project and unstructured PDF dependencies
+# Install the project with all PDF processing dependencies including Textract and GPT-4o
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -e . && \
-    pip install "unstructured[pdf]" langchain-unstructured
-
-# Download the spaCy English language model - only if absolutely needed
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m spacy download en_core_web_sm --no-deps
+    pip install -e ".[pdf-all]" && \
+    # Only install spaCy model if absolutely needed by unstructured
+    if pip show unstructured | grep -q "spacy"; then \
+        python -m spacy download en_core_web_sm --no-deps; \
+    fi
 
 # Change ownership of the app directory
 RUN chown -R appuser:appuser /usr/src/app

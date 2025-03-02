@@ -145,39 +145,51 @@ async def batch_upload_documents_endpoint(
     logger.info(f"Batch upload endpoint received {len(files)} files")
     start_time = time.time()
 
-    # Process files in parallel
-    async def process_file(file: UploadFile):
-        if not file.filename:
-            return None
-        
-        try:
-            file_content = await file.read()
-            document_id = await document_service.upload_document(
-                file.filename, file_content
-            )
-            
-            if document_id:
-                return Document(
-                    id=document_id,
-                    name=file.filename,
-                    author="author_name",
-                    tag="document_tag",
-                    page_count=10,
-                )
-            return None
-        except Exception as e:
-            logger.error(f"Error processing file {file.filename}: {str(e)}")
-            return None
+    # Read all files first to avoid timeout issues
+    file_data = []
+    for file in files:
+        if file.filename:
+            try:
+                content = await file.read()
+                file_data.append((file.filename, content))
+            except Exception as e:
+                logger.error(f"Error reading file {file.filename}: {str(e)}")
+    
+    logger.info(f"Read {len(file_data)} files, starting processing")
+    
+    # Process files in parallel with concurrency control
+    # Limit concurrency to avoid overwhelming the system
+    semaphore = asyncio.Semaphore(10)  # Process up to 10 files concurrently
+    
+    async def process_file(filename: str, content: bytes):
+        async with semaphore:
+            try:
+                document_id = await document_service.upload_document(filename, content)
+                
+                if document_id:
+                    return Document(
+                        id=document_id,
+                        name=filename,
+                        author="author_name",
+                        tag="document_tag",
+                        page_count=10,
+                    )
+                return None
+            except Exception as e:
+                logger.error(f"Error processing file {filename}: {str(e)}")
+                return None
 
-    # Process all files in parallel
-    tasks = [process_file(file) for file in files]
+    # Create tasks for all files
+    tasks = [process_file(filename, content) for filename, content in file_data]
+    
+    # Process all files with controlled concurrency
     results = await asyncio.gather(*tasks)
     
     # Filter out None results
     documents = [doc for doc in results if doc is not None]
     
     total_time = time.time() - start_time
-    logger.info(f"Batch upload completed in {total_time:.2f} seconds, processed {len(documents)} documents")
+    logger.info(f"Batch upload completed in {total_time:.2f} seconds, processed {len(documents)}/{len(file_data)} documents")
     
     return BatchUploadResponseSchema(
         documents=[DocumentResponseSchema(**doc.model_dump()) for doc in documents],

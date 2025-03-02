@@ -37,6 +37,16 @@ class Settings(BaseSettings):
     # ENVIRONMENT CONFIG
     environment: str = "dev"
     testing: bool = bool(0)
+    
+    # AWS CONFIG
+    aws_region: Optional[str] = "us-east-1"
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_session_token: Optional[str] = None  # Required for temporary credentials
+    
+    # S3 CONFIG
+    s3_bucket_name: str = "ai-grid-deep"
+    s3_prefix: str = "documents"  # Folder prefix for documents in the bucket
 
     # API CONFIG
     project_name: str = "AI Grid API"

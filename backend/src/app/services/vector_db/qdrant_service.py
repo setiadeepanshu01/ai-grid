@@ -2,6 +2,7 @@
 
 # mypy: disable-error-code="index"
 
+import asyncio
 import logging
 import uuid
 from typing import Any, Dict, List, Sequence
@@ -50,20 +51,90 @@ class QdrantService(VectorDBService):
         qdrant_config = settings.qdrant.model_dump(exclude_none=True)
         self.client = QdrantClient(**qdrant_config)
 
+    # Collection existence cache
+    _collection_exists = False
+    
     async def upsert_vectors(
         self, vectors: List[Dict[str, Any]]
     ) -> Dict[str, str]:
-        """Add vectors to a Qdrant collection."""
+        """Add vectors to a Qdrant collection with optimized batching and caching."""
         logger.info(f"Upserting {len(vectors)} chunks")
-        await self.ensure_collection_exists()
+        
+        # Only check collection existence once per application lifecycle
+        if not QdrantService._collection_exists:
+            await self.ensure_collection_exists()
+            QdrantService._collection_exists = True
+        
+        # Convert vectors to points
         points = [
             models.PointStruct(
                 id=entry.pop("id"), vector=entry.pop("vector"), payload=entry
             )
             for entry in vectors
         ]
-        self.client.upsert(self.collection_name, points=points, wait=True)
-        return {"message": f"Successfully upserted {len(vectors)} chunks."}
+        
+        # Optimize batch size based on vector count
+        # Smaller batches for larger vectors to prevent timeouts
+        if len(vectors) > 100:
+            batch_size = 30
+        elif len(vectors) > 50:
+            batch_size = 40
+        else:
+            batch_size = 50
+            
+        # Split into batches
+        batches = [points[i:i + batch_size] for i in range(0, len(points), batch_size)]
+        
+        logger.info(f"Split {len(points)} points into {len(batches)} batches with size {batch_size}")
+        
+        success_count = 0
+        error_count = 0
+        
+        # Process each batch with exponential backoff retry
+        for i, batch in enumerate(batches):
+            max_retries = 3
+            retry_delay = 1.0  # Start with 1 second delay
+            
+            for retry in range(max_retries):
+                try:
+                    logger.info(f"Processing batch {i+1}/{len(batches)} with {len(batch)} points (attempt {retry+1})")
+                    self.client.upsert(self.collection_name, points=batch, wait=True)
+                    success_count += len(batch)
+                    logger.info(f"Successfully processed batch {i+1}")
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    if retry == max_retries - 1:  # Last retry attempt
+                        error_count += len(batch)
+                        logger.error(f"Error processing batch {i+1} after {max_retries} attempts: {str(e)}")
+                        
+                        # Try with even smaller batches as a last resort
+                        if len(batch) > 10:
+                            logger.info(f"Attempting final recovery with smaller batches for batch {i+1}")
+                            smaller_batch_size = 5
+                            smaller_batches = [batch[j:j + smaller_batch_size] for j in range(0, len(batch), smaller_batch_size)]
+                            
+                            for k, small_batch in enumerate(smaller_batches):
+                                try:
+                                    self.client.upsert(self.collection_name, points=small_batch, wait=True)
+                                    success_count += len(small_batch)
+                                    error_count -= len(small_batch)
+                                    logger.info(f"Successfully processed micro-batch {k+1}/{len(smaller_batches)}")
+                                except Exception as e2:
+                                    logger.error(f"Error processing micro-batch {k+1}: {str(e2)}")
+                    else:
+                        # Not the last retry, wait and try again
+                        logger.warning(f"Batch {i+1} failed, retrying in {retry_delay}s: {str(e)}")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2  # Exponential backoff
+        
+        if error_count > 0:
+            return {
+                "message": f"Partially upserted vectors. Success: {success_count}, Failed: {error_count}",
+                "warning": "Some vectors could not be uploaded due to timeout or other errors."
+            }
+        
+        return {"message": f"Successfully upserted {success_count} chunks."}
 
     async def vector_search(
         self, queries: List[str], document_id: str
