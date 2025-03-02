@@ -16,8 +16,7 @@ logger = logging.getLogger("uvicorn")
 
 class Qdrant(BaseSettings):
     """Qdrant connection configuration."""
-
-    model_config = SettingsConfigDict(env_prefix="QDRANT_")
+    model_config = SettingsConfigDict(env_prefix="QDRANT_", extra="ignore")
 
     location: Optional[str] = None
     url: Optional[str] = None
@@ -43,8 +42,10 @@ class Settings(BaseSettings):
     project_name: str = "AI Grid API"
     api_v1_str: str = "/api/v1"
     backend_cors_origins: List[str] = [
-        "*"
-    ]  # TODO: Restrict this in production
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://ai-grid.onrender.com"
+    ]
 
     # LLM CONFIG
     dimensions: int = 1536

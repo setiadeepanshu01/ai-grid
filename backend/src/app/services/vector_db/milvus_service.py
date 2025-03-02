@@ -441,7 +441,47 @@ class MilvusService(VectorDBService):
         return {
             "sub_queries": sub_query_results,
         }
-
+    
+    async def get_document_chunks(self, document_id: str) -> List[Dict[str, Any]]:
+        """Get all chunks for a document from the Milvus database.
+        
+        Parameters
+        ----------
+        document_id : str
+            The ID of the document to retrieve chunks for.
+            
+        Returns
+        -------
+        List[Dict[str, Any]]
+            A list of document chunks, each containing text and metadata.
+        """
+        try:
+            logger.info(f"Retrieving chunks for document_id: {document_id} from Milvus")
+            
+            # Query the collection for all chunks with this document_id
+            query_response = self.client.query(
+                collection_name=self.settings.index_name,
+                filter=f'document_id == "{document_id}"',
+                output_fields=[
+                    "text", 
+                    "page_number", 
+                    "chunk_number", 
+                    "document_id"
+                ],
+                limit=1000  # Set a high limit to get all chunks
+            )
+            
+            if not query_response:
+                logger.warning(f"No chunks found for document_id: {document_id}")
+                return []
+            
+            logger.info(f"Retrieved {len(query_response)} chunks from Milvus")
+            return query_response
+            
+        except Exception as e:
+            logger.error(f"Error retrieving document chunks from Milvus: {e}", exc_info=True)
+            return []
+    
     async def delete_document(self, document_id: str) -> Dict[str, str]:
         """Delete a document from the Milvus vector database."""
         self.client.delete(

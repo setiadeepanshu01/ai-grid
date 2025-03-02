@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { 
   Box, 
   Button, 
@@ -14,6 +14,7 @@ import {
 import { IconFileText, IconX } from "@tabler/icons-react";
 import { useStore } from "@config/store";
 import { AnswerTableRow } from "@config/store/store.types";
+import { fetchDocumentPreview } from "@config/api";
 
 interface DocumentPreviewProps {
   row: AnswerTableRow | null;
@@ -25,14 +26,25 @@ export function KtDocumentPreview({ row, onClose }: DocumentPreviewProps) {
   const [content, setContent] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   
+  // Use refs to track state between renders
+  const contentFetchedRef = useRef(false);
+  const documentIdRef = useRef<string | null>(null);
+  
+  // Get document from row
   const document = row?.sourceData?.type === 'document' ? row.sourceData.document : null;
   
-  // Get chunks from the store for this document
-  const chunks = useStore(store => {
+  // Get store data
+  const { documentPreviews, addDocumentPreview } = useStore(state => ({
+    documentPreviews: state.documentPreviews,
+    addDocumentPreview: state.addDocumentPreview
+  }));
+  
+  // Get chunks from the store for this row
+  const chunks = useStore(state => {
     if (!row) return [];
     
     // Collect all chunks for this row
-    const allChunks = store.getTable().chunks;
+    const allChunks = state.getTable().chunks;
     const rowChunks = Object.entries(allChunks)
       .filter(([key]) => key.startsWith(`${row.id}-`))
       .flatMap(([_, chunks]) => chunks);
@@ -40,41 +52,97 @@ export function KtDocumentPreview({ row, onClose }: DocumentPreviewProps) {
     return rowChunks;
   });
   
+  // Load document content
   useEffect(() => {
+    // Skip if no document
     if (!document) {
       setContent([]);
       setError(null);
+      contentFetchedRef.current = false;
+      documentIdRef.current = null;
       return;
     }
+    
+    // Skip if document hasn't changed
+    if (document.id === documentIdRef.current && contentFetchedRef.current) {
+      return;
+    }
+    
+    // Update document ID ref
+    documentIdRef.current = document.id;
     
     // If we have chunks, use them as the document content
     if (chunks.length > 0) {
       setContent(chunks.map(chunk => chunk.text || chunk.content));
       setError(null);
+      contentFetchedRef.current = true;
       return;
     }
     
-    // Otherwise, just show basic document info
+    // Check if we already have the document preview in the store
+    if (documentPreviews[document.id]) {
+      // Avoid logging here to prevent console spam
+      setContent(documentPreviews[document.id]);
+      setError(null);
+      contentFetchedRef.current = true;
+      return;
+    }
+    
+    // Otherwise, fetch the document content from the preview endpoint
     setLoading(true);
+    setError(null);
+    contentFetchedRef.current = true;
     
-    // Show document info after a brief loading period
-    const timer = setTimeout(() => {
-      setLoading(false);
-      
-      // Show basic document info
-      const pageCount = document.page_count || 'unknown number of';
-      setContent([
-        `Document Name: ${document.name}`,
-        `Pages: ${pageCount}`,
-        `Author: ${document.author || 'Unknown'}`,
-        `Tag: ${document.tag || 'None'}`,
-        '',
-        'Note: To see the full document content, run a query on this document first.'
-      ]);
-    }, 500);
+    // Define the fetch function inside the effect to avoid dependency issues
+    const fetchContent = async () => {
+      try {
+        // Fetch document content using the preview endpoint
+        const documentContent = await fetchDocumentPreview(document.id);
+        
+        // Split the content by newlines and filter out empty lines
+        const contentLines = documentContent
+          .split('\n')
+          .filter(line => line.trim().length > 0);
+        
+        // If we have content, use it
+        if (contentLines.length > 0) {
+          setContent(contentLines);
+          
+          // Store the content in the global store for future use
+          addDocumentPreview(document.id, contentLines);
+        } else {
+          // If no content, show basic document info
+          const pageCount = document.page_count || 'unknown number of';
+          const basicContent = [
+            `Document Name: ${document.name}`,
+            `Pages: ${pageCount}`,
+            `Author: ${document.author || 'Unknown'}`,
+            `Tag: ${document.tag || 'None'}`,
+            '',
+            'No content could be extracted from this document.'
+          ];
+          setContent(basicContent);
+          
+          // Store the basic content in the global store
+          addDocumentPreview(document.id, basicContent);
+        }
+      } catch (err) {
+        // Show more detailed error information
+        if (err instanceof Error) {
+          setError(`Failed to load document preview: ${err.message}`);
+        } else {
+          setError('Failed to load document preview. Please try again later.');
+        }
+        // Reset the fetched flag on error so we can try again
+        contentFetchedRef.current = false;
+      } finally {
+        setLoading(false);
+      }
+    };
     
-    return () => clearTimeout(timer);
-  }, [document, chunks]);
+    fetchContent();
+    
+  }, [document?.id]); // Only depend on document ID
   
   if (!row || !document) {
     return null;
@@ -95,7 +163,7 @@ export function KtDocumentPreview({ row, onClose }: DocumentPreviewProps) {
         </Group>
       }
       position="right"
-      size="md"
+      size="xl"
     >
       <Stack>
         <Card withBorder>
@@ -107,31 +175,34 @@ export function KtDocumentPreview({ row, onClose }: DocumentPreviewProps) {
           )}
         </Card>
         
-        <ScrollArea h="calc(100vh - 200px)" type="auto">
-          {loading ? (
-            <Box ta="center" py="xl">
-              <Loader />
-              <Text mt="md">Loading document content...</Text>
-            </Box>
-          ) : error ? (
-            <Box ta="center" py="xl">
-              <IconX size={40} color="red" />
-              <Text mt="md" c="red">{error}</Text>
-            </Box>
-          ) : content.length > 0 ? (
-            <Stack>
-              {content.map((text, index) => (
-                <Card key={index} withBorder p="md">
-                  <Text>{text}</Text>
-                </Card>
-              ))}
-            </Stack>
-          ) : (
-            <Box ta="center" py="xl">
-              <Text>No content available for this document.</Text>
-            </Box>
-          )}
-        </ScrollArea>
+        {/* Document content - Text view only */}
+        <Box>
+          <ScrollArea h="calc(100vh - 250px)" type="auto">
+            {loading ? (
+              <Box ta="center" py="xl">
+                <Loader />
+                <Text mt="md">Loading document content...</Text>
+              </Box>
+            ) : error ? (
+              <Box ta="center" py="xl">
+                <IconX size={40} color="red" />
+                <Text mt="md" c="red">{error}</Text>
+              </Box>
+            ) : content.length > 0 ? (
+              <Stack>
+                {content.map((text, index) => (
+                  <Card key={index} withBorder p="md">
+                    <Text>{text}</Text>
+                  </Card>
+                ))}
+              </Stack>
+            ) : (
+              <Box ta="center" py="xl">
+                <Text>No text content available for this document.</Text>
+              </Box>
+            )}
+          </ScrollArea>
+        </Box>
         
         <Button fullWidth onClick={onClose}>Close Preview</Button>
       </Stack>

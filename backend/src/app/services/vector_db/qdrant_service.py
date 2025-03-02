@@ -247,6 +247,60 @@ class QdrantService(VectorDBService):
                 ),
             )
 
+    async def get_document_chunks(self, document_id: str) -> List[Dict[str, Any]]:
+        """Get all chunks for a document from the Qdrant database.
+        
+        Parameters
+        ----------
+        document_id : str
+            The ID of the document to retrieve chunks for.
+            
+        Returns
+        -------
+        List[Dict[str, Any]]
+            A list of document chunks, each containing text and metadata.
+        """
+        try:
+            logger.info(f"Retrieving chunks for document_id: {document_id} from Qdrant")
+            
+            # Query the collection for all chunks with this document_id
+            scroll_response = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="document_id",
+                            match=models.MatchValue(value=document_id),
+                        )
+                    ]
+                ),
+                limit=1000,  # Set a high limit to get all chunks
+                with_payload=True,
+            )
+            
+            # The scroll method returns a tuple (records, next_page_offset)
+            # Extract the records from the tuple
+            records = scroll_response[0] if isinstance(scroll_response, tuple) else scroll_response
+            
+            if not records:
+                logger.warning(f"No chunks found for document_id: {document_id}")
+                return []
+            
+            # Convert the records to dictionaries
+            chunks = []
+            for record in records:
+                if hasattr(record, 'payload') and record.payload:
+                    # Create a dictionary with the payload data
+                    chunk_dict = record.payload.copy()
+                    chunks.append(chunk_dict)
+            
+            logger.info(f"Retrieved {len(chunks)} chunks from Qdrant")
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"Error retrieving document chunks from Qdrant: {e}", exc_info=True)
+            return []
+
     async def delete_document(self, document_id: str) -> Dict[str, str]:
         """Delete a document from a Qdrant collection."""
         self.client.delete(

@@ -34,6 +34,7 @@ export const useStore = create<Store>()(
       colorScheme: "light",
       ...getInitialData(),
       activePopoverId: null,
+      documentPreviews: {}, // Initialize empty document previews
 
       toggleColorScheme: () => {
         set({ colorScheme: get().colorScheme === "light" ? "dark" : "light" });
@@ -41,6 +42,16 @@ export const useStore = create<Store>()(
       
       setActivePopover: (id: string | null) => {
         set({ activePopoverId: id });
+      },
+
+      // Add document preview content to the store
+      addDocumentPreview: (documentId: string, content: string[]) => {
+        set({
+          documentPreviews: {
+            ...get().documentPreviews,
+            [documentId]: content
+          }
+        });
       },
 
       getTable: (id = get().activeTableId) => {
@@ -799,7 +810,10 @@ export const useStore = create<Store>()(
 
       clear: allTables => {
         if (allTables) {
-          set(getInitialData());
+          set({
+            ...getInitialData(),
+            documentPreviews: {} // Clear document previews when clearing all tables
+          });
         } else {
           const { id, name, ...table } = getBlankTable();
           get().editActiveTable({
@@ -815,7 +829,8 @@ export const useStore = create<Store>()(
       version: 9,
       partialize: (state) => ({
         ...state,
-        activePopoverId: null // Don't persist active popover state
+        activePopoverId: null, // Don't persist active popover state
+        documentPreviews: state.documentPreviews // Persist document previews
       })
     }
   )

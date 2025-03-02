@@ -6,6 +6,7 @@ export interface Store {
   tables: AnswerTable[];
   activeTableId: string;
   activePopoverId: string | null;
+  documentPreviews: Record<string, string[]>; // Store document preview content by document ID
 
   toggleColorScheme: () => void;
   setActivePopover: (id: string | null) => void;
@@ -54,6 +55,9 @@ export interface Store {
   deleteFilters: (ids?: string[]) => void;
   applyFilters: () => void;
 
+  // Add document preview content to the store
+  addDocumentPreview: (documentId: string, content: string[]) => void;
+  
   clear: (allTables?: boolean) => void;
 }
 

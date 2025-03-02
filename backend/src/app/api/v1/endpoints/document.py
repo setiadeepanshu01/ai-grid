@@ -13,6 +13,7 @@ from app.schemas.document_api import (
     DeleteDocumentResponseSchema,
     DocumentResponseSchema,
     BatchUploadResponseSchema,
+    DocumentPreviewResponseSchema,
 )
 from app.services.document_service import DocumentService
 
@@ -232,4 +233,56 @@ async def delete_document_endpoint(
         logger.error(f"Unexpected error in delete_document_endpoint: {e}")
         raise HTTPException(
             status_code=500, detail="An unexpected error occurred"
+        )
+
+
+@router.get("/{document_id}/preview", response_model=DocumentPreviewResponseSchema)
+async def preview_document_text(
+    document_id: str,
+    document_service: DocumentService = Depends(get_document_service),
+) -> DocumentPreviewResponseSchema:
+    """
+    Get document preview as text by retrieving chunks from the vector database.
+
+    Parameters
+    ----------
+    document_id : str
+        The ID of the document to preview.
+    document_service : DocumentService
+        The document service for retrieving the document chunks.
+
+    Returns
+    -------
+    DocumentPreviewResponseSchema
+        The preview content of the document.
+
+    Raises
+    ------
+    HTTPException
+        If an error occurs during the preview process.
+    """
+    logger.info(f"Document text preview requested for document_id: {document_id}")
+    try:
+        logger.info("Retrieving document chunks from vector database")
+        chunks = await document_service.get_document_chunks(document_id)
+        
+        if not chunks:
+            logger.warning(f"No chunks found for document_id: {document_id}")
+            return DocumentPreviewResponseSchema(content="No content available for this document.")
+        
+        # Sort chunks by chunk number to maintain document order
+        sorted_chunks = sorted(chunks, key=lambda x: x.get("chunk_number", 0))
+        
+        # Concatenate all chunk texts
+        content = "\n\n".join(chunk.get("text", "") for chunk in sorted_chunks)
+        logger.info(f"Retrieved document content, length: {len(content) if content else 0}")
+        
+        return DocumentPreviewResponseSchema(content=content)
+    except ValueError as ve:
+        logger.error(f"ValueError in preview_document_text: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Unexpected error in preview_document_text: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
         )

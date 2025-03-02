@@ -39,3 +39,8 @@ class BatchUploadResponseSchema(BaseModel):
     total_files: int
     successful_files: int
     failed_files: int
+
+
+class DocumentPreviewResponseSchema(BaseModel):
+    """Schema for document preview response."""
+    content: str

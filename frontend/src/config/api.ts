@@ -151,6 +151,40 @@ export const runQuery = async (row: any, column: any, globalRules: any = []): Pr
  * @param queries Array of query objects, each containing row, column, and globalRules
  * @returns Array of query results in the same order as the input queries
  */
+export const fetchDocumentPreview = async (documentId: string): Promise<string> => {
+  console.log(`Fetching document preview for ID: ${documentId}`);
+  console.log(`Preview URL: ${API_ENDPOINTS.DOCUMENT_PREVIEW(documentId)}`);
+  
+  try {
+    const response = await fetch(API_ENDPOINTS.DOCUMENT_PREVIEW(documentId), {
+      method: 'GET',
+      headers: DEFAULT_HEADERS,
+      mode: 'cors',
+      credentials: 'include',
+    });
+    
+    console.log(`Preview response status: ${response.status} ${response.statusText}`);
+    
+    if (!response.ok) {
+      console.error(`Error response from preview endpoint: ${response.status} ${response.statusText}`);
+      throw new ApiError(`Failed to fetch document preview: ${response.statusText}`, response.status);
+    }
+    
+    const data = await response.json();
+    console.log(`Preview response data:`, data);
+    
+    if (!data || !data.content) {
+      console.error('No content in preview response:', data);
+      return '';
+    }
+    
+    return data.content;
+  } catch (error) {
+    console.error('Error fetching document preview:', error);
+    throw error;
+  }
+};
+
 export const runBatchQueries = async (
   queries: Array<{ row: any; column: any; globalRules?: any[] }>
 ): Promise<any[]> => {
@@ -207,6 +241,7 @@ export const API_ENDPOINTS = {
   DOCUMENT_UPLOAD: `${API_URL}/api/v1/document`,
   BATCH_DOCUMENT_UPLOAD: `${API_URL}/api/v1/document/batch`,
   DOCUMENT_PROCESS: `${API_URL}/api/v1/document/process`,
+  DOCUMENT_PREVIEW: (id: string) => `${API_URL}/api/v1/document/${id}/preview`,
   
   // Graph endpoints
   GRAPHS: `${API_URL}/api/v1/graphs`,

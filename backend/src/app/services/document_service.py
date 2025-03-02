@@ -6,7 +6,7 @@ import os
 import tempfile
 import time
 import uuid
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from langchain.schema import Document as LangchainDocument
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -45,22 +45,24 @@ class DocumentService:
     ) -> Optional[str]:
         """Upload a document."""
         try:
-
             # Generate a document ID
             document_id = self._generate_document_id()
             logger.info(f"Created document_id: {document_id}")
 
-            # Save the file to a temporary location
-            with tempfile.NamedTemporaryFile(
-                delete=False, suffix=os.path.splitext(filename)[1]
-            ) as temp_file:
-                temp_file.write(file_content)
-                temp_file_path = temp_file.name
+            # Create a directory to store uploaded documents
+            documents_dir = os.path.join(tempfile.gettempdir(), "ai_grid_documents")
+            os.makedirs(documents_dir, exist_ok=True)
+            
+            # Save the file with a name based on the document ID
+            file_path = os.path.join(documents_dir, f"{document_id}{os.path.splitext(filename)[1]}")
+            logger.info(f"Saving document to: {file_path}")
+            
+            with open(file_path, 'wb') as f:
+                f.write(file_content)
 
             # Process the document
             try:
-
-                chunks = await self._process_document(temp_file_path)
+                chunks = await self._process_document(file_path)
                 logger.info(f"Processed document into {len(chunks)} chunks")
                 
                 if not chunks:
@@ -71,6 +73,10 @@ class DocumentService:
                 if chunks:
                     logger.info(f"First chunk sample: {chunks[0].page_content[:100]}...")
                 
+                # Add the file path to the first chunk's metadata
+                for chunk in chunks:
+                    chunk.metadata["file_path"] = file_path
+                
                 prepared_chunks = await self.vector_db_service.prepare_chunks(
                     document_id, chunks
                 )
@@ -80,11 +86,16 @@ class DocumentService:
                     logger.warning(f"No prepared chunks for document: {filename}")
                     return document_id  # Return the ID even if no prepared chunks
                 
+                # Add file_path to each prepared chunk
+                for chunk in prepared_chunks:
+                    chunk["file_path"] = file_path
+                
                 result = await self.vector_db_service.upsert_vectors(prepared_chunks)
                 logger.info(f"Upsert result: {result}")
-            finally:
-                if os.path.exists(temp_file_path):
-                    os.remove(temp_file_path)
+            except Exception as e:
+                logger.error(f"Error processing document: {e}", exc_info=True)
+                # Don't delete the file on error, so we can debug
+                raise
 
             return document_id
 
@@ -171,4 +182,42 @@ class DocumentService:
             return result
         except Exception as e:
             logger.error(f"Error deleting document: {e}")
+            raise
+
+    async def get_document_chunks(self, document_id: str) -> List[Dict[str, Any]]:
+        """Retrieve all chunks for a document from the vector database.
+        
+        This method queries the vector database for all chunks associated with
+        the given document ID and returns them.
+        
+        Parameters
+        ----------
+        document_id : str
+            The ID of the document to retrieve chunks for.
+            
+        Returns
+        -------
+        List[Dict[str, Any]]
+            A list of document chunks, each containing text and metadata.
+            
+        Raises
+        ------
+        ValueError
+            If the document is not found or if no chunks are available.
+        """
+        try:
+            logger.info(f"Getting document chunks for document_id: {document_id}")
+            
+            # Query the vector database for all chunks with this document_id
+            chunks = await self.vector_db_service.get_document_chunks(document_id)
+            
+            if not chunks:
+                logger.warning(f"No chunks found for document_id: {document_id}")
+                return []
+                
+            logger.info(f"Retrieved {len(chunks)} chunks for document_id: {document_id}")
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"Error retrieving document chunks: {e}", exc_info=True)
             raise

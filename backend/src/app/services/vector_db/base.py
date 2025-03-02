@@ -122,7 +122,23 @@ class VectorDBService(ABC):
                 zip(chunks, cleaned_texts, embedded_chunks)
             )
         ]
-
+    
+    @abstractmethod
+    async def get_document_chunks(self, document_id: str) -> List[Dict[str, Any]]:
+        """Get all chunks for a document from the vector database.
+        
+        Parameters
+        ----------
+        document_id : str
+            The ID of the document to retrieve chunks for.
+            
+        Returns
+        -------
+        List[Dict[str, Any]]
+            A list of document chunks, each containing text and metadata.
+        """
+        pass
+        
     async def extract_keywords(
         self, query: str, rules: list[Rule], llm_service: CompletionService
     ) -> list[str]:
