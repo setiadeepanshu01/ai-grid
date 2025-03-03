@@ -8,13 +8,25 @@ export const KtDownload = {
   Csv: () => {
     const handleDownload = () => {
       const data = useStore.getState().getTable();
-      const columns = data.columns.map(col => col.entityType || "Unknown");
+      
+      // Filter out columns that don't have meaningful data
+      const validColumns = data.columns.filter(col => {
+        // Check if this column has any non-empty data in any row
+        return data.rows.some(row => {
+          const cell = row.cells[col.id];
+          return !isNil(cell) && (isArray(cell) ? cell.length > 0 : String(cell).trim() !== '');
+        });
+      });
+      
+      // Use better column names - use entityType or fall back to id
+      const columnNames = validColumns.map(col => col.entityType || col.id || "Column");
 
-      let csvData = `Document,${columns.join(",")}\n`;
+      let csvData = `Document,${columnNames.join(",")}\n`;
 
-      for (const row of data.rows) {
+      // Process rows and filter out those with unknown document names
+      const processedRows = data.rows.map(row => {
         // Handle different source data types
-        let documentName = "Unknown";
+        let documentName = "";
         if (row.sourceData?.type === "document") {
           documentName = row.sourceData.document.name;
         } else if (row.sourceData?.type === "loading") {
@@ -23,18 +35,35 @@ export const KtDownload = {
           documentName = `Error: ${row.sourceData.name}`;
         }
 
-        const cellValues = data.columns.map(col => {
+        // Skip rows with empty document names
+        if (!documentName) {
+          return null;
+        }
+
+        const cellValues = validColumns.map(col => {
           const cell = row.cells[col.id];
-          if (isNil(cell)) return "";
+          if (isNil(cell)) return '""';
           else if (isArray(cell)) {
             return `"${cell.join(", ")}"`;
           } else {
-            return String(cell);
+            // Escape any quotes in the cell value and wrap in quotes
+            const cellStr = String(cell).replace(/"/g, '""');
+            return `"${cellStr}"`;
           }
         });
 
-        csvData += `"${documentName}",${cellValues.join(",")}\n`;
-      }
+        return {
+          documentName,
+          cellValues
+        };
+      }).filter(Boolean); // Remove null entries
+
+      // Add rows to CSV data
+      processedRows.forEach(row => {
+        if (row) {
+          csvData += `"${row.documentName}",${row.cellValues.join(",")}\n`;
+        }
+      });
 
       download("ai-grid-data.csv", {
         mimeType: "text/csv",
