@@ -61,7 +61,7 @@ export const uploadFile = async (file: File): Promise<any> => {
       body: formData,
       mode: 'cors',
       credentials: 'include',
-      headers: UPLOAD_HEADERS
+      headers: getUploadHeaders()
     });
     
     if (!response.ok) {
@@ -91,7 +91,7 @@ export const uploadFiles = async (files: File[]): Promise<any> => {
       body: formData,
       mode: 'cors',
       credentials: 'include',
-      headers: UPLOAD_HEADERS
+      headers: getUploadHeaders()
     });
     
     if (!response.ok) {
@@ -120,7 +120,7 @@ export const runQuery = async (row: any, column: any, globalRules: any = []): Pr
   try {
     const response = await fetch(API_ENDPOINTS.QUERY, {
       method: 'POST',
-      headers: DEFAULT_HEADERS,
+      headers: getAuthHeaders(),
       mode: 'cors',
       credentials: 'include',
       body: JSON.stringify({
@@ -158,7 +158,7 @@ export const fetchDocumentPreview = async (documentId: string): Promise<string> 
   try {
     const response = await fetch(API_ENDPOINTS.DOCUMENT_PREVIEW(documentId), {
       method: 'GET',
-      headers: DEFAULT_HEADERS,
+      headers: getAuthHeaders(),
       mode: 'cors',
       credentials: 'include',
     });
@@ -211,7 +211,7 @@ export const runBatchQueries = async (
   try {
     const response = await fetch(API_ENDPOINTS.BATCH_QUERY, {
       method: 'POST',
-      headers: DEFAULT_HEADERS,
+      headers: getAuthHeaders(),
       mode: 'cors',
       credentials: 'include',
       body: JSON.stringify(formattedQueries),
@@ -255,9 +255,32 @@ export const API_ENDPOINTS = {
   HEALTH: `${API_URL}/ping`,
 };
 
+import { useStore } from './store';
+
+// Function to get headers with authentication token
+export const getAuthHeaders = () => {
+  const token = useStore.getState().auth.token;
+  
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+};
+
 // Default request headers
 export const DEFAULT_HEADERS = {
   'Content-Type': 'application/json',
+};
+
+// Function to get upload headers with authentication token
+export const getUploadHeaders = () => {
+  const token = useStore.getState().auth.token;
+  
+  return {
+    'Accept': 'application/json',
+    'Origin': 'https://ai-grid.onrender.com',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
 };
 
 // File upload headers

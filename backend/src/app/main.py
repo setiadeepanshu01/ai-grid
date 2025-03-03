@@ -3,10 +3,12 @@
 import logging
 from typing import Any, Dict
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.api import api_router
+from app.core.auth import decode_token
 from app.core.config import Settings, get_settings
 from app.services.document_service import DocumentService
 from app.services.embedding.factory import EmbeddingServiceFactory
@@ -34,6 +36,63 @@ app.add_middleware(
     max_age=600,  # Cache preflight requests for 10 minutes
 )
 
+# Authentication middleware
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Middleware to check authentication for protected routes."""
+    
+    async def dispatch(self, request: Request, call_next):
+        """Check authentication for protected routes.
+        
+        Args:
+            request: The FastAPI request object.
+            call_next: The next middleware or endpoint handler.
+            
+        Returns:
+            Response: The response from the next middleware or endpoint.
+        """
+        # Public paths that don't require authentication
+        public_paths = [
+            "/ping",
+            "/docs",
+            "/redoc",
+            f"{settings.api_v1_str}/auth/login",
+            f"{settings.api_v1_str}/auth/verify",
+            f"{settings.api_v1_str}/openapi.json", # OpenAPI schema
+        ]
+        
+        # Check if the path is public
+        if any(request.url.path.startswith(path) for path in public_paths):
+            return await call_next(request)
+        
+        # Check for OPTIONS requests (CORS preflight)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        
+        # Get the Authorization header
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return Response(
+                content='{"detail":"Not authenticated"}',
+                status_code=403,
+                media_type="application/json"
+            )
+        
+        # Extract and validate the token
+        token = auth_header.replace("Bearer ", "")
+        payload = decode_token(token)
+        if payload is None:
+            return Response(
+                content='{"detail":"Invalid or expired token"}',
+                status_code=403,
+                media_type="application/json"
+            )
+        
+        # Token is valid, proceed with the request
+        return await call_next(request)
+
+# Add the authentication middleware
+app.add_middleware(AuthMiddleware)
+
 # Include the API router
 app.include_router(api_router, prefix=settings.api_v1_str)
 
@@ -43,37 +102,48 @@ async def startup_event():
     """Initialize services once at application startup."""
     logger.info("Initializing application services...")
     
-    # Initialize embedding service
-    logger.info(f"Creating embedding service for provider: {settings.embedding_provider}")
-    app.state.embedding_service = EmbeddingServiceFactory.create_service(settings)
-    if app.state.embedding_service is None:
-        raise ValueError(f"Failed to create embedding service for provider: {settings.embedding_provider}")
-    
-    # Initialize LLM service
-    logger.info(f"Creating LLM service for provider: {settings.llm_provider}")
-    app.state.llm_service = CompletionServiceFactory.create_service(settings)
-    if app.state.llm_service is None:
-        raise ValueError(f"Failed to create LLM service for provider: {settings.llm_provider}")
-    
-    # Initialize vector database service
-    logger.info(f"Creating vector database service for provider: {settings.vector_db_provider}")
-    app.state.vector_db_service = VectorDBFactory.create_vector_db_service(
-        app.state.embedding_service, 
-        app.state.llm_service, 
-        settings
-    )
-    if app.state.vector_db_service is None:
-        raise ValueError(f"Failed to create vector database service for provider: {settings.vector_db_provider}")
-    
-    # Initialize document service
-    logger.info("Creating document service")
-    app.state.document_service = DocumentService(
-        app.state.vector_db_service,
-        app.state.llm_service,
-        settings
-    )
-    
-    logger.info("All application services initialized successfully")
+    try:
+        # Initialize embedding service
+        logger.info(f"Creating embedding service for provider: {settings.embedding_provider}")
+        app.state.embedding_service = EmbeddingServiceFactory.create_service(settings)
+        if app.state.embedding_service is None:
+            logger.error(f"Failed to create embedding service for provider: {settings.embedding_provider}")
+            app.state.services_initialized = False
+            return
+        
+        # Initialize LLM service
+        logger.info(f"Creating LLM service for provider: {settings.llm_provider}")
+        app.state.llm_service = CompletionServiceFactory.create_service(settings)
+        if app.state.llm_service is None:
+            logger.error(f"Failed to create LLM service for provider: {settings.llm_provider}")
+            app.state.services_initialized = False
+            return
+        
+        # Initialize vector database service
+        logger.info(f"Creating vector database service for provider: {settings.vector_db_provider}")
+        app.state.vector_db_service = VectorDBFactory.create_vector_db_service(
+            app.state.embedding_service, 
+            app.state.llm_service, 
+            settings
+        )
+        if app.state.vector_db_service is None:
+            logger.error(f"Failed to create vector database service for provider: {settings.vector_db_provider}")
+            app.state.services_initialized = False
+            return
+        
+        # Initialize document service
+        logger.info("Creating document service")
+        app.state.document_service = DocumentService(
+            app.state.vector_db_service,
+            app.state.llm_service,
+            settings
+        )
+        
+        app.state.services_initialized = True
+        logger.info("All application services initialized successfully")
+    except Exception as e:
+        logger.error(f"Error initializing services: {str(e)}")
+        app.state.services_initialized = False
 
 
 @app.get("/ping")

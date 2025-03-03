@@ -25,6 +25,7 @@ import {
 } from "./store.utils";
 import { AnswerTableRow, ResolvedEntity, SourceData, Store } from "./store.types";
 import { ApiError, runBatchQueries, uploadFile } from "../api";
+import { AuthError, login as apiLogin, verifyToken } from "../../services/api/auth";
 import { notifications } from "../../utils/notifications";
 import { insertAfter, insertBefore, where } from "@utils/functions";
 
@@ -35,6 +36,117 @@ export const useStore = create<Store>()(
       ...getInitialData(),
       activePopoverId: null,
       documentPreviews: {}, // Initialize empty document previews
+      auth: {
+        token: null,
+        isAuthenticated: false,
+        isAuthenticating: false
+      },
+      
+      // Authentication methods
+      login: async (password: string) => {
+        try {
+          set({ auth: { ...get().auth, isAuthenticating: true } });
+          
+          const response = await apiLogin(password);
+          
+          set({
+            auth: {
+              token: response.access_token,
+              isAuthenticated: true,
+              isAuthenticating: false
+            }
+          });
+          
+          notifications.show({
+            title: 'Login successful',
+            message: 'You have been successfully authenticated',
+            color: 'green'
+          });
+        } catch (error) {
+          set({
+            auth: {
+              ...get().auth,
+              isAuthenticating: false
+            }
+          });
+          
+          if (error instanceof AuthError) {
+            notifications.show({
+              title: 'Authentication failed',
+              message: error.message,
+              color: 'red'
+            });
+          } else {
+            notifications.show({
+              title: 'Authentication failed',
+              message: error instanceof Error ? error.message : 'Unknown error',
+              color: 'red'
+            });
+          }
+          
+          throw error;
+        }
+      },
+      
+      logout: () => {
+        set({
+          auth: {
+            token: null,
+            isAuthenticated: false,
+            isAuthenticating: false
+          }
+        });
+        
+        notifications.show({
+          title: 'Logged out',
+          message: 'You have been logged out',
+          color: 'blue'
+        });
+      },
+      
+      checkAuth: async () => {
+        const { auth } = get();
+        
+        if (!auth.token) {
+          return false;
+        }
+        
+        try {
+          const result = await verifyToken(auth.token);
+          
+          if (!result || !result.isValid) {
+            set({
+              auth: {
+                token: null,
+                isAuthenticated: false,
+                isAuthenticating: false
+              }
+            });
+            return false;
+          } else if (!auth.isAuthenticated) {
+            set({
+              auth: {
+                ...auth,
+                isAuthenticated: true
+              }
+            });
+          }
+          
+          return result;
+        } catch (error) {
+          console.error('Error verifying token:', error);
+          
+          set({
+            auth: {
+              token: null,
+              isAuthenticated: false,
+              isAuthenticating: false
+            }
+          });
+          
+          return false;
+        }
+      },
 
       toggleColorScheme: () => {
         set({ colorScheme: get().colorScheme === "light" ? "dark" : "light" });
@@ -826,11 +938,12 @@ export const useStore = create<Store>()(
     }),
     {
       name: "store",
-      version: 9,
+      version: 10, // Increment version due to schema change
       partialize: (state) => ({
         ...state,
         activePopoverId: null, // Don't persist active popover state
-        documentPreviews: state.documentPreviews // Persist document previews
+        documentPreviews: state.documentPreviews, // Persist document previews
+        auth: state.auth // Persist authentication state
       })
     }
   )

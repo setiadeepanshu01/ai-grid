@@ -5,8 +5,10 @@ SettingsConfigDict to load environment variables from a .env file.
 """
 
 import logging
+import os
 from functools import lru_cache
 from typing import List, Optional
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -16,7 +18,13 @@ logger = logging.getLogger("uvicorn")
 
 class Qdrant(BaseSettings):
     """Qdrant connection configuration."""
-    model_config = SettingsConfigDict(env_prefix="QDRANT_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="QDRANT_", 
+        extra="ignore",
+        env_file=["../../../backend/.env", "../../.env", "../.env", ".env"],
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
 
     location: Optional[str] = None
     url: Optional[str] = None
@@ -86,9 +94,13 @@ class Settings(BaseSettings):
 
     # UNSTRUCTURED CONFIG
     unstructured_api_key: Optional[str] = None
+    
+    # AUTHENTICATION CONFIG
+    auth_password: Optional[str] = None
+    jwt_secret: Optional[str] = None
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=["../../../backend/.env", "../../.env", "../.env", ".env"],
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -100,4 +112,30 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get the settings for the application."""
     logger.info("Loading config settings from the environment...")
-    return Settings()
+    
+    # # Debug: Check for .env files
+    # env_paths = ["../../../backend/.env", "../../.env", "../.env", ".env"]
+    # for env_path in env_paths:
+    #     path = Path(env_path)
+    #     if path.exists():
+    #         logger.info(f"Found .env file at: {path.absolute()}")
+    #     else:
+    #         logger.info(f".env file not found at: {path.absolute()}")
+    
+    # # Debug: Current working directory
+    # logger.info(f"Current working directory: {os.getcwd()}")
+    
+    settings = Settings()
+    
+    # Debug log to check if the OpenAI API key is loaded
+    if settings.openai_api_key:
+        logger.info("OpenAI API key is set")
+    else:
+        logger.warning("OpenAI API key is not set")
+    
+    # # Debug log to check vector db provider and Qdrant configuration
+    # logger.info(f"Vector DB provider: {settings.vector_db_provider}")
+    # if settings.vector_db_provider == "qdrant":
+    #     logger.info(f"Qdrant configuration: {settings.qdrant.model_dump()}")
+    
+    return settings

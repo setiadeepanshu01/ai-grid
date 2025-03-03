@@ -1,22 +1,13 @@
-# Knowledge Table
+# AI Grid
 
-**Knowledge Table** is an open-source package designed to simplify extracting and exploring structured data from unstructured documents. It enables the creation of structured knowledge representations, such as tables and graphs, using a natural language query interface. With customizable extraction rules, fine-tuned formatting options, and data traceability through provenance displayed in the UI, Knowledge Table is adaptable to various use cases.
+**AI Grid** is an open-source package designed to simplify extracting and exploring structured data from unstructured documents. It enables the creation of structured knowledge representations, such as tables and graphs, using a natural language query interface. With customizable extraction rules, fine-tuned formatting options, and data traceability through provenance displayed in the UI, AI Grid is adaptable to various use cases.
 
 Our goal is to provide a familiar, spreadsheet-like interface for business users, while offering a flexible and highly configurable backend for developers. This ensures seamless integration into existing RAG workflows, whether you’re processing a handful of files or exploring hundreds of documents.
 
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![GitHub issues](https://img.shields.io/github/issues/whyhow-ai/knowledge-table)](https://github.com/whyhow-ai/knowledge-table/issues)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-
-For a limited demo, check out the [Knowledge Table Demo](https://knowledge-table-demo.whyhow.ai/).
-
-https://github.com/user-attachments/assets/8e0e5cc6-6468-4bb5-888c-6b552e15b58a
-
-Also check out the WhyHow [Knowledge Graph Studio](https://github.com/whyhow-ai/knowledge-graph-studio), an open source platform that makes it easy and intuitive to create and manage RAG-native knowledge graphs. To learn more about WhyHow and our projects, visit our [website](https://whyhow.ai/) and our [blog](https://medium.com/enterprise-rag).
 
 ## Table of Contents
 
-- [Why Knowledge Table?](#why-knowledge-table)
+- [Why AI Grid?](#why-ai-grid)
 - [Getting Started](#getting-started)
   - [Running from Docker](#running-from-docker)
   - [Running Natively](#running-natively)
@@ -34,11 +25,11 @@ Also check out the WhyHow [Knowledge Graph Studio](https://github.com/whyhow-ai/
 - [Screenshots](#screenshots)
 - [Roadmap](#roadmap)
 
-## Why Knowledge Table?
+## Why AI Grid?
 
-Better RAG systems depend on bringing structure to unstructured data, transforming it into formats like tables or graphs. WhyHow.AI develops tools that organize document content and metadata, and tools like Knowledge Table play a key role in this process. Its intuitive interface makes data easy to explore and manage for both technical and non-technical users.
+Better RAG systems depend on bringing structure to unstructured data, transforming it into formats like tables or graphs. WhyHow.AI develops tools that organize document content and metadata, and tools like AI Grid play a key role in this process. Its intuitive interface makes data easy to explore and manage for both technical and non-technical users.
 
-As an open-source project, Knowledge Table is fully customizable to suit your needs. Whether you're integrating your own models, workflows, or extraction rules, its flexibility supports innovation and adapts to your specific requirements. By structuring the right data in the right format, Knowledge Table helps streamline your data extraction process, making it easier to unlock valuable insights from unstructured information.
+As an open-source project, AI Grid is fully customizable to suit your needs. Whether you're integrating your own models, workflows, or extraction rules, its flexibility supports innovation and adapts to your specific requirements. By structuring the right data in the right format, AI Grid helps streamline your data extraction process, making it easier to unlock valuable insights from unstructured information.
 
 ---
 
@@ -81,13 +72,13 @@ The frontend can be accessed at `http://localhost:3000`, and the backend can be 
 1. **Clone the repository:**
 
    ```sh
-   git clone https://github.com/yourusername/knowledge-table.git
+   git clone https://github.com/yourusername/ai-grid.git
    ```
 
 2. **Navigate to the backend directory:**
 
    ```sh
-   cd knowledge-table/backend/
+   cd ai-grid/backend/
    ```
 
 3. **Create and activate a virtual environment:**
@@ -190,7 +181,7 @@ To set up the project for development:
 - **Chunk Linking** - Link raw source text chunks to the answers for traceability and provenance.
 - **Extract with natural language** - Use natural language queries to extract structured data from unstructured documents.
 - **Customizable extraction rules** - Define rules to guide the extraction process and ensure data quality.
-- **Custom formatting** - Control the output format of your extracted data. Knowledge table current supports text, list of text, number, list of numbers, and boolean formats.
+- **Custom formatting** - Control the output format of your extracted data. AI Grid current supports text, list of text, number, list of numbers, and boolean formats.
 - **Filtering** - Filter documents based on metadata or extracted data.
 - **Exporting as CSV or Triples** - Download extracted data as CSV or graph triples.
 - **Chained extraction** - Reference previous columns in your extraction questions using @ i.e. "What are the treatments for `@disease`?".
@@ -206,7 +197,7 @@ Like a spreadsheet, a **table** is a collection of rows and columns that store s
 
 ### Documents
 
-Each **document** is an unstructured data source (e.g., a contract, article, or report) uploaded to the Knowledge Table. When you upload a document, it is split into chunks, the chunks are embedded and tagged with metadata, and stored in a vector database.
+Each **document** is an unstructured data source (e.g., a contract, article, or report) uploaded to the AI Grid. When you upload a document, it is split into chunks, the chunks are embedded and tagged with metadata, and stored in a vector database.
 
 ### Question
 
@@ -225,7 +216,7 @@ A **Rule** guides the extraction from the LLM. You can add rules on a column lev
 
 ## Practical Usage
 
-Once you've set up your questions, rules, and documents, the Knowledge Table processes the data and returns structured outputs based on your inputs. You may need to tweak the questions or adjust rule settings to fine-tune the extraction.
+Once you've set up your questions, rules, and documents, the AI Grid processes the data and returns structured outputs based on your inputs. You may need to tweak the questions or adjust rule settings to fine-tune the extraction.
 
 ### Use Cases
 
@@ -244,7 +235,7 @@ To create the Schema for the Triples, we use an LLM to consider the Entity Type 
 
 ## Rules
 
-We now have 3 types of [Rules](https://medium.com/enterprise-rag/rules-extraction-guardrails-knowledge-table-studio-e84999ade353) you can now incorporate within your processes, which are:
+We now have 3 types of rules you can now incorporate within your processes, which are:
 
 - **Entity Resolution Rules**: Resolving discrepencies between Entities or imposing a common terminology on top of Entities
 
@@ -256,7 +247,7 @@ We now have 3 types of [Rules](https://medium.com/enterprise-rag/rules-extractio
 
 ## Extending the Project
 
-Knowledge Table is built to be flexible and customizable, allowing you to extend it to fit your workflow:
+AI Grid is built to be flexible and customizable, allowing you to extend it to fit your workflow:
 
 - **Integrate with your own databases**.
 - **Create custom questions and rules**.
@@ -270,7 +261,7 @@ Knowledge Table is built to be flexible and customizable, allowing you to extend
 
 ### Unstructured API
 
-Knowledge Table offers optional integration with the Unstructured API for enhanced document processing capabilities. This integration allows for more advanced parsing and extraction from various document types.
+AI Grid offers optional integration with the Unstructured API for enhanced document processing capabilities. This integration allows for more advanced parsing and extraction from various document types.
 
 To use the Unstructured API integration:
 
@@ -284,7 +275,7 @@ To use the Unstructured API integration:
    pip install .[unstructured]
    ```
 
-When the `UNSTRUCTURED_API_KEY` is set, Knowledge Table will automatically use the Unstructured API for document processing. If the key is not set or if there's an issue with the Unstructured API, the system will fall back to the default document loaders.
+When the `UNSTRUCTURED_API_KEY` is set, AI Grid will automatically use the Unstructured API for document processing. If the key is not set or if there's an issue with the Unstructured API, the system will fall back to the default document loaders.
 
 ## Note: Usage of the Unstructured API may incur costs based on your plan with Unstructured.io.
 
@@ -318,7 +309,7 @@ When the `UNSTRUCTURED_API_KEY` is set, Knowledge Table will automatically use t
 
 ## Contributing
 
-We welcome contributions to improve the Knowledge Table. If you have any ideas, bug reports, or feature requests, please open an issue on the GitHub repository.
+We welcome contributions to improve the AI Grid. If you have any ideas, bug reports, or feature requests, please open an issue on the GitHub repository.
 
 ### How to Contribute:
 
@@ -333,12 +324,6 @@ We welcome contributions to improve the Knowledge Table. If you have any ideas, 
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for details.
-
----
-
-## Support
-
-WhyHow.AI is building tools to help developers bring more determinism and control to their RAG pipelines using graph structures. If you're incorporating knowledge graphs in RAG, we’d love to chat at team@whyhow.ai, or follow our newsletter at [WhyHow.AI](https://www.whyhow.ai/). Join our discussions on our [Discord](https://discord.com/invite/9bWqrsxgHr).
 
 ---
 

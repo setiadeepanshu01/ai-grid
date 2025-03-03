@@ -16,10 +16,15 @@ class OpenAIEmbeddingService(EmbeddingService):
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.client = OpenAI(api_key=settings.openai_api_key)
         self.model = settings.embedding_model
+        
+        # Check if API key is set before initializing the client
         if not settings.openai_api_key:
+            logger.error("OpenAI API key is required but not set")
             raise ValueError("OpenAI API key is required but not set")
+        
+        # Initialize the client after checking the API key
+        self.client = OpenAI(api_key=settings.openai_api_key)
 
     async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Get embeddings for text."""

@@ -1,15 +1,27 @@
 import { z } from "zod";
 import { answerSchema, documentSchema, chunkSchema } from "../api";
 
+export interface AuthState {
+  token: string | null;
+  isAuthenticated: boolean;
+  isAuthenticating: boolean;
+}
+
 export interface Store {
   colorScheme: "light" | "dark";
   tables: AnswerTable[];
   activeTableId: string;
   activePopoverId: string | null;
   documentPreviews: Record<string, string[]>; // Store document preview content by document ID
+  auth: AuthState;
 
   toggleColorScheme: () => void;
   setActivePopover: (id: string | null) => void;
+  
+  // Authentication actions
+  login: (password: string) => Promise<void>;
+  logout: () => void;
+  checkAuth: () => Promise<{ isValid: boolean; servicesInitialized: boolean } | false>;
 
   getTable: (id?: string) => AnswerTable;
   addTable: (name: string) => void;
