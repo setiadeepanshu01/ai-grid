@@ -70,6 +70,10 @@ export interface Store {
   // Add document preview content to the store
   addDocumentPreview: (documentId: string, content: string[]) => void;
   
+  // Table state persistence
+  saveTableState: () => Promise<void>;
+  loadLatestTableState: () => Promise<void>;
+  
   clear: (allTables?: boolean) => void;
 }
 

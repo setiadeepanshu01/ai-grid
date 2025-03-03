@@ -23,6 +23,7 @@ settings = get_settings()
 app = FastAPI(
     title=settings.project_name,
     openapi_url=f"{settings.api_v1_str}/openapi.json",
+    redirect_slashes=False,  # Disable automatic redirects for trailing slashes
 )
 
 # Configure CORS with specific settings

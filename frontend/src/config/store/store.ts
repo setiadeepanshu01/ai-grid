@@ -26,6 +26,11 @@ import {
 import { AnswerTableRow, ResolvedEntity, SourceData, Store } from "./store.types";
 import { ApiError, runBatchQueries, uploadFile } from "../api";
 import { AuthError, login as apiLogin, verifyToken } from "../../services/api/auth";
+import { 
+  saveTableState as apiSaveTableState, 
+  updateTableState as apiUpdateTableState,
+  listTableStates
+} from "../../services/api/table-state";
 import { notifications } from "../../utils/notifications";
 import { insertAfter, insertBefore, where } from "@utils/functions";
 
@@ -196,13 +201,33 @@ export const useStore = create<Store>()(
         }
       },
 
-      deleteTable: id => {
-        const { tables, activeTableId } = get();
+      deleteTable: async id => {
+        const { tables, activeTableId, auth } = get();
+        
+        // Delete from the store
         const nextTables = tables.filter(t => t.id !== id);
         if (isEmpty(nextTables)) return;
         const nextActiveTable =
           activeTableId === id ? nextTables[0].id : activeTableId;
         set({ tables: nextTables, activeTableId: nextActiveTable });
+        
+        // Delete from the database if authenticated
+        if (auth.isAuthenticated && auth.token) {
+          try {
+            // Import the deleteTableState function from the API
+            const { deleteTableState } = await import("../../services/api/table-state");
+            
+            // Delete the table state from the database
+            await deleteTableState(id);
+          } catch (error) {
+            console.error('Error deleting table state from database:', error);
+            notifications.show({
+              title: 'Delete failed',
+              message: 'Failed to delete table state from database',
+              color: 'red'
+            });
+          }
+        }
       },
 
       insertColumnBefore: id => {
@@ -920,6 +945,87 @@ export const useStore = create<Store>()(
         });
       },
 
+      // Automatic persistence methods
+      saveTableState: async () => {
+        const { activeTableId, getTable, auth } = get();
+        
+          // Only save if authenticated
+          if (!auth.isAuthenticated || !auth.token) {
+            return Promise.resolve();
+          }
+        
+        try {
+          const table = getTable(activeTableId);
+          
+          // First, check if the table state already exists by listing all table states
+          const response = await listTableStates();
+          const existingState = response.items?.find(item => item.id === table.id);
+          
+          if (existingState) {
+            // If it exists, update it
+            await apiUpdateTableState(table.id, table);
+          } else {
+            // If it doesn't exist, create a new one
+            await apiSaveTableState(table.id, table.name, table);
+          }
+          
+          return Promise.resolve();
+        } catch (error) {
+          console.error('Error auto-saving table state:', error);
+          return Promise.reject(error);
+        }
+      },
+      
+      loadLatestTableState: async () => {
+        const { auth } = get();
+        
+        // Only load if authenticated
+        if (!auth.isAuthenticated || !auth.token) {
+          return Promise.resolve();
+        }
+        
+        try {
+          // Get all table states
+          const response = await listTableStates();
+          
+          // If no table states, return
+          if (!response.items || response.items.length === 0) {
+            return Promise.resolve();
+          }
+          
+          // Sort by updated_at to get the most recent first
+          const sortedStates = response.items.sort((a, b) => 
+            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+          );
+          
+          // Load all table states into the store
+          const tables = sortedStates.map(state => ({
+            id: state.id,
+            name: state.name,
+            columns: state.data.columns || [],
+            rows: state.data.rows || [],
+            globalRules: state.data.globalRules || [],
+            filters: state.data.filters || [],
+            chunks: state.data.chunks || {},
+            openedChunks: state.data.openedChunks || [],
+            loadingCells: {},
+            uploadingFiles: false
+          }));
+          
+          // Set all tables and make the most recent one active
+          set({
+            tables,
+            activeTableId: tables.length > 0 ? tables[0].id : get().activeTableId
+          });
+          
+          // No logs for normal operation
+          return Promise.resolve();
+        } catch (error) {
+          console.error('Error auto-loading table state:', error);
+          return Promise.reject(error);
+        }
+      },
+      
       clear: allTables => {
         if (allTables) {
           set({

@@ -100,9 +100,26 @@ export function KtSwitch(props: BoxProps) {
 
 function NewTableModalContent() {
   const [name, setName] = useInputState("");
+  const [error, setError] = useInputState("");
+  const tables = useStore(store => store.tables);
+  
   const handleCreate = () => {
-    useStore.getState().addTable(name);
+    // Check if a table with this name already exists
+    const nameExists = tables.some(t => t.name.toLowerCase() === name.trim().toLowerCase());
+    
+    if (nameExists) {
+      setError("A table with this name already exists. Please choose a different name.");
+      return;
+    }
+    
+    useStore.getState().addTable(name.trim());
     modals.closeAll();
+  };
+
+  // Clear error when name changes
+  const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setName(event.currentTarget.value);
+    if (error) setError("");
   };
 
   return (
@@ -112,8 +129,9 @@ function NewTableModalContent() {
         label="Name"
         placeholder="Table name"
         value={name}
-        onChange={setName}
+        onChange={handleNameChange}
         onKeyDown={e => !e.ctrlKey && e.key === "Enter" && handleCreate()}
+        error={error}
       />
       <Button
         mt="md"
@@ -131,9 +149,29 @@ function NewTableModalContent() {
 
 function RenameTableModalContent({ table }: { table: AnswerTable }) {
   const [name, handlers] = useDerivedState(table.name);
+  const [error, setError] = useInputState("");
+  const tables = useStore(store => store.tables);
+  
   const handleSave = () => {
-    useStore.getState().editTable(table.id, { name });
+    // Check if a table with this name already exists (excluding the current table)
+    const nameExists = tables.some(t => 
+      t.id !== table.id && 
+      t.name.toLowerCase() === name.trim().toLowerCase()
+    );
+    
+    if (nameExists) {
+      setError("A table with this name already exists. Please choose a different name.");
+      return;
+    }
+    
+    useStore.getState().editTable(table.id, { name: name.trim() });
     modals.closeAll();
+  };
+  
+  // Clear error when name changes
+  const handleNameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handlers.set(event.currentTarget.value);
+    if (error) setError("");
   };
 
   return (
@@ -143,8 +181,9 @@ function RenameTableModalContent({ table }: { table: AnswerTable }) {
         label="Name"
         placeholder="Table name"
         value={name}
-        onChange={e => handlers.set(e.target.value)}
+        onChange={handleNameChange}
         onKeyDown={e => !e.ctrlKey && e.key === "Enter" && handleSave()}
+        error={error}
       />
       <Button
         mt="md"

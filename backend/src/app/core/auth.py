@@ -35,7 +35,7 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     """Token data model."""
-    exp: int
+    exp: float  
 
 
 def verify_password(password: str) -> bool:

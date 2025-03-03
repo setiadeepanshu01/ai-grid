@@ -10,6 +10,7 @@ import { useTheme } from "@config/theme";
 import { useStore } from "@config/store";
 import { KtTable, KTFileDrop, KtSwitch, KtControls } from "@components";
 import { AuthWrapper } from "./components/auth";
+import { KtAutoPersistence } from "./components/kt/kt-auto-persistence";
 import "./app.css";
 
 export function App() {
@@ -53,6 +54,7 @@ export function App() {
             <KtControls mt="md" ml="md" />
             <KtTable mt="md" />
             <KTFileDrop />
+            <KtAutoPersistence />
           </AuthWrapper>
         </ModalsProvider>
       </MantineProvider>
