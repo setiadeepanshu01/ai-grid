@@ -15,6 +15,10 @@ services:
         sync: false
       - key: MILVUS_DB_URI
         value: /data/milvus_db.db
+      - key: AUTH_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
       - key: DOCKER_BUILDKIT
         value: "1"
     healthCheckPath: /ping

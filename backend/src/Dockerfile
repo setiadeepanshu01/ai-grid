@@ -90,6 +90,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         python -m spacy download en_core_web_sm --no-deps; \
     fi
 
+# Create data directory and set permissions
+RUN mkdir -p /data && chown -R appuser:appuser /data
+
 # Change ownership of the app directory
 RUN chown -R appuser:appuser /usr/src/app
 
