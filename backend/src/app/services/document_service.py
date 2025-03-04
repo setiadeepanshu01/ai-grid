@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from langchain.schema import Document as LangchainDocument
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langsmith import traceable
 
 from app.core.config import Settings
 from app.services.llm.base import CompletionService
@@ -38,6 +39,7 @@ class DocumentService:
             chunk_overlap=self.settings.chunk_overlap,
         )
 
+    @traceable(name="document_upload", run_type="chain")
     async def upload_document(
         self,
         filename: str,
@@ -77,8 +79,11 @@ class DocumentService:
                 for chunk in chunks:
                     chunk.metadata["file_path"] = file_path
                 
+                # Use the parent_run_id from the traceable decorator
+                parent_run_id = None  # The traceable decorator will handle this
+                
                 prepared_chunks = await self.vector_db_service.prepare_chunks(
-                    document_id, chunks
+                    document_id, chunks, parent_run_id
                 )
                 logger.info(f"Prepared {len(prepared_chunks)} chunks for vector storage")
                 
@@ -90,7 +95,7 @@ class DocumentService:
                 for chunk in prepared_chunks:
                     chunk["file_path"] = file_path
                 
-                result = await self.vector_db_service.upsert_vectors(prepared_chunks)
+                result = await self.vector_db_service.upsert_vectors(prepared_chunks, parent_run_id)
                 logger.info(f"Upsert result: {result}")
             except Exception as e:
                 logger.error(f"Error processing document: {e}", exc_info=True)
@@ -633,16 +638,19 @@ class DocumentService:
     def _generate_document_id() -> str:
         return uuid.uuid4().hex
 
-    async def delete_document(self, document_id: str) -> Dict[str, str]:
+    @traceable(name="document_delete", run_type="tool")
+    async def delete_document(self, document_id: str, parent_run_id: str = None) -> Dict[str, str]:
         """Delete a document."""
         try:
-            result = await self.vector_db_service.delete_document(document_id)
+            # The parent_run_id will be handled by the traceable decorator
+            result = await self.vector_db_service.delete_document(document_id, parent_run_id)
             return result
         except Exception as e:
             logger.error(f"Error deleting document: {e}")
             raise
 
-    async def get_document_chunks(self, document_id: str) -> List[Dict[str, Any]]:
+    @traceable(name="get_document_chunks", run_type="retriever")
+    async def get_document_chunks(self, document_id: str, parent_run_id: str = None) -> List[Dict[str, Any]]:
         """Retrieve all chunks for a document from the vector database.
         
         This method queries the vector database for all chunks associated with
@@ -666,8 +674,10 @@ class DocumentService:
         try:
             logger.info(f"Getting document chunks for document_id: {document_id}")
             
+            # The parent_run_id will be handled by the traceable decorator
+            
             # Query the vector database for all chunks with this document_id
-            chunks = await self.vector_db_service.get_document_chunks(document_id)
+            chunks = await self.vector_db_service.get_document_chunks(document_id, parent_run_id)
             
             if not chunks:
                 logger.warning(f"No chunks found for document_id: {document_id}")

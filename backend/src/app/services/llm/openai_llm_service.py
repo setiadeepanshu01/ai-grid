@@ -5,6 +5,7 @@ import logging
 import time
 from typing import Any, Optional, Type
 
+from langsmith import traceable
 from openai import OpenAI
 from pydantic import BaseModel
 
@@ -34,8 +35,9 @@ class OpenAICompletionService(CompletionService):
                 "OpenAI API key is not set. LLM features will be disabled."
             )
 
+    @traceable(run_type="llm")
     async def generate_completion(
-        self, prompt: str, response_model: Type[BaseModel], timeout: int = DEFAULT_TIMEOUT
+        self, prompt: str, response_model: Type[BaseModel], parent_run_id: str = None, timeout: int = DEFAULT_TIMEOUT
     ) -> Optional[BaseModel]:
         """Generate a completion from the language model with timeout and retry logic."""
         if self.client is None:
@@ -57,7 +59,7 @@ class OpenAICompletionService(CompletionService):
                 
                 # Create a task for the API call
                 response_task = asyncio.create_task(
-                    self._make_api_call(prompt, response_model)
+                    self._make_api_call(prompt, response_model, parent_run_id)
                 )
                 
                 # Wait for the task to complete with a timeout
@@ -119,8 +121,9 @@ class OpenAICompletionService(CompletionService):
         logger.error(f"Failed to generate completion after {MAX_RETRIES + 1} attempts: {last_error}")
         raise Exception(f"Failed to generate completion: {last_error}")
     
+    @traceable(name="llm_api_call", run_type="llm")
     async def _make_api_call(
-        self, prompt: str, response_model: Type[BaseModel]
+        self, prompt: str, response_model: Type[BaseModel], parent_run_id: str = None
     ) -> Any:  # Use Any instead of the specific type
         """Make the actual API call to OpenAI."""
         return self.client.beta.chat.completions.parse(
@@ -129,7 +132,8 @@ class OpenAICompletionService(CompletionService):
             response_format=response_model,
         )
 
-    async def decompose_query(self, query: str) -> dict[str, Any]:
+    @traceable(name="query_decomposition", run_type="chain")
+    async def decompose_query(self, query: str, parent_run_id: str = None) -> dict[str, Any]:
         """Decompose the query into smaller sub-queries."""
         if self.client is None:
             logger.warning(

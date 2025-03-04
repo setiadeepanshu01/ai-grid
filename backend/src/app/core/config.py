@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     # AUTHENTICATION CONFIG
     auth_password: Optional[str] = None
     jwt_secret: Optional[str] = None
+    
+    # LANGSMITH CONFIG
+    langsmith_tracing: bool = False
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langsmith_project: str = "ai-grid"
+    langsmith_api_key: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=["../../../backend/.env", "../../.env", "../.env", ".env"],

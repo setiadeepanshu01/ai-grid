@@ -1,6 +1,7 @@
 """Main module for the AI Grid API service with optimized service initialization."""
 
 import logging
+import os
 from typing import Any, Dict
 
 from fastapi import Depends, FastAPI, Request, Response
@@ -102,6 +103,17 @@ app.include_router(api_router, prefix=settings.api_v1_str)
 async def startup_event():
     """Initialize services once at application startup."""
     logger.info("Initializing application services...")
+    
+    # Initialize LangSmith tracing if enabled
+    if settings.langsmith_tracing and settings.langsmith_api_key:
+        logger.info("Initializing LangSmith tracing")
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGCHAIN_ENDPOINT"] = settings.langsmith_endpoint
+        os.environ["LANGCHAIN_API_KEY"] = settings.langsmith_api_key
+        os.environ["LANGCHAIN_PROJECT"] = settings.langsmith_project
+        
+        # Log successful LangSmith configuration
+        logger.info(f"LangSmith tracing enabled with project: {settings.langsmith_project}")
     
     try:
         # Initialize embedding service

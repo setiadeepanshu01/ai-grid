@@ -3,6 +3,7 @@
 import logging
 from typing import List
 
+from langsmith import traceable
 from openai import OpenAI
 
 from app.core.config import Settings
@@ -26,7 +27,8 @@ class OpenAIEmbeddingService(EmbeddingService):
         # Initialize the client after checking the API key
         self.client = OpenAI(api_key=settings.openai_api_key)
 
-    async def get_embeddings(self, texts: List[str]) -> List[List[float]]:
+    @traceable(run_type="embedding")
+    async def get_embeddings(self, texts: List[str], parent_run_id: str = None) -> List[List[float]]:
         """Get embeddings for text."""
         if self.client is None:
             logger.warning(

@@ -35,14 +35,14 @@ class VectorDBService(ABC):
 
     @abstractmethod
     async def upsert_vectors(
-        self, vectors: List[Dict[str, Any]]
+        self, vectors: List[Dict[str, Any]], parent_run_id: str = None
     ) -> Dict[str, str]:
         """Upsert the vectors into the vector database."""
         pass
 
     @abstractmethod
     async def vector_search(
-        self, queries: List[str], document_id: str
+        self, queries: List[str], document_id: str, parent_run_id: str = None
     ) -> VectorResponseSchema:
         """Perform a vector search."""
         pass
@@ -50,27 +50,27 @@ class VectorDBService(ABC):
     # Update other methods if they also return VectorResponse
     @abstractmethod
     async def keyword_search(
-        self, query: str, document_id: str, keywords: List[str]
+        self, query: str, document_id: str, keywords: List[str], parent_run_id: str = None
     ) -> VectorResponseSchema:
         """Perform a keyword search."""
         pass
 
     @abstractmethod
     async def hybrid_search(
-        self, query: str, document_id: str, rules: List[Rule]
+        self, query: str, document_id: str, rules: List[Rule], parent_run_id: str = None
     ) -> VectorResponseSchema:
         """Perform a hybrid search."""
         pass
 
     @abstractmethod
     async def decomposed_search(
-        self, query: str, document_id: str, rules: List[Rule]
+        self, query: str, document_id: str, rules: List[Rule], parent_run_id: str = None
     ) -> Dict[str, Any]:
         """Decomposition query."""
         pass
 
     @abstractmethod
-    async def delete_document(self, document_id: str) -> Dict[str, str]:
+    async def delete_document(self, document_id: str, parent_run_id: str = None) -> Dict[str, str]:
         """Delete the document from the vector database."""
         pass
 
@@ -80,20 +80,20 @@ class VectorDBService(ABC):
         pass
 
     async def get_embeddings(
-        self, texts: Union[str, List[str]]
+        self, texts: Union[str, List[str]], parent_run_id: str = None
     ) -> List[List[float]]:
         """Get embeddings for the given text(s) using the embedding service."""
         if isinstance(texts, str):
             texts = [texts]
-        return await self.embedding_service.get_embeddings(texts)
+        return await self.embedding_service.get_embeddings(texts, parent_run_id)
 
-    async def get_single_embedding(self, text: str) -> List[float]:
+    async def get_single_embedding(self, text: str, parent_run_id: str = None) -> List[float]:
         """Get a single embedding for the given text."""
-        embeddings = await self.get_embeddings(text)
+        embeddings = await self.get_embeddings(text, parent_run_id)
         return embeddings[0]
 
     async def prepare_chunks(
-        self, document_id: str, chunks: List[Document]
+        self, document_id: str, chunks: List[Document], parent_run_id: str = None
     ) -> List[Dict[str, Any]]:
         """Prepare chunks for insertion into the vector database."""
         logger.info(f"Preparing {len(chunks)} chunks")
@@ -106,7 +106,7 @@ class VectorDBService(ABC):
         logger.info("Generating embeddings.")
 
         # Embed all chunks at once
-        embedded_chunks = await self.get_embeddings(cleaned_texts)
+        embedded_chunks = await self.get_embeddings(cleaned_texts, parent_run_id)
 
         # Prepare the data for insertion
         return [
@@ -124,7 +124,7 @@ class VectorDBService(ABC):
         ]
     
     @abstractmethod
-    async def get_document_chunks(self, document_id: str) -> List[Dict[str, Any]]:
+    async def get_document_chunks(self, document_id: str, parent_run_id: str = None) -> List[Dict[str, Any]]:
         """Get all chunks for a document from the vector database.
         
         Parameters

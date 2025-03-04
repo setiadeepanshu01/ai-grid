@@ -55,7 +55,7 @@ class QdrantService(VectorDBService):
     _collection_exists = False
     
     async def upsert_vectors(
-        self, vectors: List[Dict[str, Any]]
+        self, vectors: List[Dict[str, Any]], parent_run_id: str = None
     ) -> Dict[str, str]:
         """Add vectors to a Qdrant collection with optimized batching and caching."""
         logger.info(f"Upserting {len(vectors)} chunks")
@@ -137,7 +137,7 @@ class QdrantService(VectorDBService):
         return {"message": f"Successfully upserted {success_count} chunks."}
 
     async def vector_search(
-        self, queries: List[str], document_id: str
+        self, queries: List[str], document_id: str, parent_run_id: str = None
     ) -> VectorResponseSchema:
         """Perform a vector search on the Qdrant collection."""
         logger.info(f"Retrieving vectors for {len(queries)} queries.")
@@ -146,7 +146,7 @@ class QdrantService(VectorDBService):
 
         for query in queries:
             logger.info("Generating embedding.")
-            embedded_query = await self.get_single_embedding(query)
+            embedded_query = await self.get_single_embedding(query, parent_run_id)
             logger.info("Searching...")
 
             query_response = self.client.query_points(
@@ -188,6 +188,7 @@ class QdrantService(VectorDBService):
         query: str,
         document_id: str,
         rules: list[Rule],
+        parent_run_id: str = None
     ) -> VectorResponseSchema:
         """Perform a hybrid search on the Qdrant collection."""
         logger.info("Performing hybrid search.")
@@ -233,7 +234,7 @@ class QdrantService(VectorDBService):
                 reverse=True,
             )
 
-        embedded_query = await self.get_single_embedding(query)
+        embedded_query = await self.get_single_embedding(query, parent_run_id)
         logger.info("Running semantic similarity search.")
 
         semantic_response = self.client.query_points(
@@ -289,12 +290,13 @@ class QdrantService(VectorDBService):
         query: str,
         document_id: str,
         rules: List[Rule],
+        parent_run_id: str = None
     ) -> Dict[str, Any]:
         """Perform a decomposed search on a Qdrant collection."""
         logger.info("Decomposing query into smaller sub-queries.")
-        decomposition_response = await self.llm_service.decompose_query(query)
+        decomposition_response = await self.llm_service.decompose_query(query, parent_run_id)
         sub_query_chunks = await self.vector_search(
-            decomposition_response["sub-queries"], document_id
+            decomposition_response["sub-queries"], document_id, parent_run_id
         )
         return {
             "sub_queries": decomposition_response["sub-queries"],
@@ -302,7 +304,7 @@ class QdrantService(VectorDBService):
         }
 
     async def keyword_search(
-        self, query: str, document_id: str, keywords: List[str]
+        self, query: str, document_id: str, keywords: List[str], parent_run_id: str = None
     ) -> VectorResponseSchema:
         """Perform a keyword search."""
         # Not being used currently
@@ -318,7 +320,7 @@ class QdrantService(VectorDBService):
                 ),
             )
 
-    async def get_document_chunks(self, document_id: str) -> List[Dict[str, Any]]:
+    async def get_document_chunks(self, document_id: str, parent_run_id: str = None) -> List[Dict[str, Any]]:
         """Get all chunks for a document from the Qdrant database.
         
         Parameters
@@ -372,7 +374,7 @@ class QdrantService(VectorDBService):
             logger.error(f"Error retrieving document chunks from Qdrant: {e}", exc_info=True)
             return []
 
-    async def delete_document(self, document_id: str) -> Dict[str, str]:
+    async def delete_document(self, document_id: str, parent_run_id: str = None) -> Dict[str, str]:
         """Delete a document from a Qdrant collection."""
         self.client.delete(
             collection_name=self.collection_name,
