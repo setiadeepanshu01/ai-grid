@@ -24,9 +24,39 @@ const setupGlobalHandlers = () => {
     const isInsidePopover = !!(e.target as Element).closest(`.${classes.dropdown}`) || 
                             !!(e.target as Element).closest(`.${classes.target}`);
     
-    // Check if the click is inside any Mantine Menu component
-    const isInsideMantineMenu = !!(e.target as Element).closest('.mantine-Menu-dropdown') || 
-                               !!(e.target as Element).closest('.mantine-Menu-item');
+    // Check if the click is inside any Mantine component
+    const isInsideMantineMenu = (function() {
+      // Check the target element itself
+      const targetEl = e.target as Element;
+      
+      // If the target has any class containing "mantine" or has stop propagation attribute
+      if (Array.from(targetEl.classList || []).some(cls => cls.includes('mantine')) ||
+          targetEl.hasAttribute('data-mantine-stop-propagation')) {
+        return true;
+      }
+      
+      // Check all parent elements up to the document root
+      let currentEl: Element | null = targetEl;
+      while (currentEl) {
+        // Check if the element has any class containing "mantine"
+        if (currentEl.classList && Array.from(currentEl.classList).some(cls => cls.includes('mantine'))) {
+          return true;
+        }
+        
+        // Check for data attributes that Mantine uses or stop propagation attribute
+        if (currentEl.hasAttribute('data-menu-dropdown') || 
+            currentEl.hasAttribute('data-menu-item') || 
+            currentEl.hasAttribute('data-position') ||
+            currentEl.hasAttribute('data-mantine-stop-propagation')) {
+          return true;
+        }
+        
+        // Move up to the parent element
+        currentEl = currentEl.parentElement;
+      }
+      
+      return false;
+    })();
     
     // If click is inside the popover or a Mantine Menu, don't close it
     if (isInsidePopover || isInsideMantineMenu) return;

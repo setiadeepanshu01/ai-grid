@@ -36,14 +36,18 @@ export function MenuButton({
       offset={2}
       withinPortal={true}
       disabled={disabled}
-      closeOnItemClick={true}
+      closeOnItemClick={false}
       {...menuProps}
     >
       <Menu.Target>
         <Box 
           {...props} 
           className={cn(classes.menuButton, props.className)}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          data-mantine-stop-propagation="true"
         >
           <Input.Label>{label}</Input.Label>
           <Group>
@@ -52,7 +56,17 @@ export function MenuButton({
           </Group>
         </Box>
       </Menu.Target>
-      <Menu.Dropdown {...dropdownProps}>{menu}</Menu.Dropdown>
+      <Menu.Dropdown 
+        {...dropdownProps} 
+        onPointerDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        data-mantine-stop-propagation="true"
+      >
+        <Box data-mantine-stop-propagation="true">
+          {menu}
+        </Box>
+      </Menu.Dropdown>
     </Menu>
   );
 }

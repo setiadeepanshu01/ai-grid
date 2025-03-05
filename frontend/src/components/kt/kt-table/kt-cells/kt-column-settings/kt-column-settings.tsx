@@ -247,11 +247,18 @@ export function KtColumnSettings({
         menu={typeOptions.map(({ value: type, label, icon: Icon }) => (
           <Menu.Item
             key={type}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               handleSet({ type });
+              return false;
             }}
             leftSection={<Icon />}
+            data-mantine-stop-propagation="true"
           >
             {label}
           </Menu.Item>
@@ -266,11 +273,18 @@ export function KtColumnSettings({
         menu={generateOptions.map(({ value: generate, label, icon: Icon }) => (
           <Menu.Item
             key={String(generate)}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               handleSet({ generate });
+              return false;
             }}
             leftSection={<Icon />}
+            data-mantine-stop-propagation="true"
           >
             {label}
           </Menu.Item>
