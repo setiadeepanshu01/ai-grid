@@ -58,14 +58,34 @@ export function MenuButton({
       </Menu.Target>
       <Menu.Dropdown 
         {...dropdownProps} 
-        onPointerDown={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onKeyDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
         data-mantine-stop-propagation="true"
       >
-        <Box data-mantine-stop-propagation="true">
+        <div 
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          data-mantine-stop-propagation="true"
+          style={{ width: '100%', height: '100%' }}
+        >
           {menu}
-        </Box>
+        </div>
       </Menu.Dropdown>
     </Menu>
   );

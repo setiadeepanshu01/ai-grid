@@ -1025,7 +1025,90 @@ export const useStore = create<Store>()(
           return Promise.reject(error);
         }
       },
-      
+      // Import CSV data into the grid
+      importCsvData: async (data, preserveExistingColumns = false) => {
+        const { getTable, editActiveTable } = get();
+        
+        try {
+          // If there's no data, return
+          if (!data || data.length === 0) {
+            return;
+          }
+          
+          // Get current table
+          const table = getTable();
+          
+          // Get header row (first row of CSV)
+          const headerRow = data[0];
+          const dataRows = data.slice(1);
+          
+          // Create new columns based on header row
+          const newColumns = headerRow.map((header) => {
+            // Check if a column with this name already exists
+            const existingColumn = table.columns.find(col => 
+              col.entityType.toLowerCase() === header.toLowerCase() ||
+              col.query.toLowerCase() === header.toLowerCase()
+            );
+            
+            if (existingColumn && preserveExistingColumns) {
+              return existingColumn;
+            }
+            
+            // Create a new column for each header
+            return {
+              ...getBlankColumn(),
+              entityType: header || 'Column',
+              query: header || 'Column', 
+              generate: false, // Don't auto-generate for imported data
+              type: "str" as const // Default to string type for CSV data
+            };
+          });
+          
+          // Create rows with cell data
+          const newRows = dataRows.map(rowData => {
+            const row = getBlankRow();
+            
+            // Add cell data
+            const cells: Record<string, any> = {};
+            rowData.forEach((cellValue, index) => {
+              if (index < newColumns.length) {
+                cells[newColumns[index].id] = cellValue ? cellValue : '';
+              }
+            });
+            
+            return {
+              ...row,
+              cells
+            };
+          });
+          
+          if (preserveExistingColumns) {
+            // Merge new columns with existing ones
+            const existingColumnIds = new Set(table.columns.map(col => col.id));
+            const columnsToAdd = newColumns.filter(col => !existingColumnIds.has(col.id));
+            
+            editActiveTable({
+              columns: [...table.columns, ...columnsToAdd],
+              rows: [...table.rows, ...newRows]
+            });
+          } else {
+            // Replace existing columns and rows with new ones from CSV
+            editActiveTable({
+              columns: newColumns,
+              rows: newRows
+            });
+          }
+          
+          // Force a UI refresh by saving the state
+          get().saveTableState();
+          
+          return Promise.resolve();
+        } catch (error) {
+          console.error('Error importing CSV data:', error);
+          return Promise.reject(error);
+        }
+      },
+
       clear: allTables => {
         if (allTables) {
           set({

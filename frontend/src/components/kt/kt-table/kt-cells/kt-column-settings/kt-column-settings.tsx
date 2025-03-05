@@ -110,23 +110,52 @@ export function KtColumnSettings({
   };
 
   const rulesMenu = (
-    <Box w={430}>
+    <Box 
+      w={430} 
+      onClick={(e) => e.stopPropagation()} 
+      onMouseDown={(e) => e.stopPropagation()}
+      data-mantine-stop-propagation="true"
+    >
       {isEmpty(state.rules) ? (
-        <Empty message="No rules are applied" />
+        <div 
+          onClick={(e) => e.stopPropagation()} 
+          onMouseDown={(e) => e.stopPropagation()}
+          data-mantine-stop-propagation="true"
+        >
+          <Empty message="No rules are applied" />
+        </div>
       ) : (
         state.rules.map((rule, index) => (
-          <Group key={index} mb="xs" gap="xs" wrap="nowrap">
+          <Group 
+            key={index} 
+            mb="xs" 
+            gap="xs" 
+            wrap="nowrap"
+            onClick={(e) => e.stopPropagation()} 
+            onMouseDown={(e) => e.stopPropagation()}
+            data-mantine-stop-propagation="true"
+          >
             <Select
               variant="unstyled"
               data={ruleOptions}
-              comboboxProps={{ withinPortal: false }}
+              comboboxProps={{ 
+                withinPortal: false
+              }}
               value={rule.type}
               onChange={type => {
                 if (type) {
                   handleRuleTypeChange(rule, type as AnswerTableRule["type"]);
                 }
               }}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              data-mantine-stop-propagation="true"
             />
             {rule.type === "max_length" ? (
               <NumberInput
@@ -140,7 +169,15 @@ export function KtColumnSettings({
                     length: isString(length) ? 1 : length
                   })
                 }
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                data-mantine-stop-propagation="true"
               />
             ) : (
               <TagsInput
@@ -148,32 +185,77 @@ export function KtColumnSettings({
                 placeholder="Values"
                 value={rule.options ?? []}
                 onChange={options => handleRuleChange(rule, { options })}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                data-mantine-stop-propagation="true"
               />
             )}
-            <Info>{ruleInfo[rule.type]}</Info>
+            <div 
+              onClick={(e) => e.stopPropagation()} 
+              onMouseDown={(e) => e.stopPropagation()}
+              data-mantine-stop-propagation="true"
+            >
+              <Info>
+                {ruleInfo[rule.type]}
+              </Info>
+            </div>
             <ActionIcon 
               color="red" 
               onClick={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 handleDeleteRule(rule);
               }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              data-mantine-stop-propagation="true"
             >
               <IconTrash />
             </ActionIcon>
           </Group>
         ))
       )}
-      <Alert mt="xs">Global rules may also apply to this column.</Alert>
-      <Divider mt="xs" />
-      <Group mt="xs">
+      <Alert 
+        mt="xs" 
+        onClick={(e) => e.stopPropagation()} 
+        onMouseDown={(e) => e.stopPropagation()}
+        data-mantine-stop-propagation="true"
+      >
+        Global rules may also apply to this column.
+      </Alert>
+      <Divider 
+        mt="xs" 
+        onClick={(e) => e.stopPropagation()} 
+        onMouseDown={(e) => e.stopPropagation()}
+        data-mantine-stop-propagation="true"
+      />
+      <Group 
+        mt="xs"
+        onClick={(e) => e.stopPropagation()} 
+        onMouseDown={(e) => e.stopPropagation()}
+        data-mantine-stop-propagation="true"
+      >
         <Button 
           flex={1} 
           leftSection={<IconPlus />} 
           onClick={(e) => {
+            e.preventDefault();
             e.stopPropagation();
             handleAddRule();
           }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          data-mantine-stop-propagation="true"
         >
           Add rule
         </Button>
@@ -183,9 +265,15 @@ export function KtColumnSettings({
           variant="light"
           leftSection={<IconTrash />}
           onClick={(e) => {
+            e.preventDefault();
             e.stopPropagation();
             handleSet({ rules: [] });
           }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          data-mantine-stop-propagation="true"
         >
           Clear
         </Button>
