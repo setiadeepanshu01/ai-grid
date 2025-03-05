@@ -60,6 +60,13 @@ export function KtColumnQuestion({
     );
   }, [columns, defaultValue, value]);
   
+  // Debug log to help diagnose issues with column data
+  console.log("Available columns for mentions:", columns.map(col => ({
+    id: col.id,
+    entityType: col.entityType,
+    type: col.type
+  })));
+  
   // Generate example placeholder based on column type if available
   const examplePlaceholder = useMemo(() => {
     if (!currentColumn?.entityType) return placeholder;
@@ -87,10 +94,13 @@ export function KtColumnQuestion({
             trigger: "@",
             data: columns
               .filter(column => column.entityType.trim())
-              .map(column => ({
-                id: column.id,
-                display: column.entityType
-              })),
+              .map(column => {
+                console.log(`Processing column for mention: ${column.entityType}, id: ${column.id}, type: ${column.type}`);
+                return {
+                  id: column.id,
+                  display: column.entityType
+                };
+              }),
             color: item => entityColor(item.display ?? "").fill,
             render: item => {
               const color = entityColor(item.display ?? "").fill;

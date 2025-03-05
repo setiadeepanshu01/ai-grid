@@ -1026,6 +1026,13 @@ export const useStore = create<Store>()(
         }
       },
       
+      // Import CSV data into the grid
+      importCsvData: async (_data, _preserveExistingColumns = false) => {
+        // Temporarily commented out to debug other issues
+        console.log("CSV import temporarily disabled for debugging");
+        return Promise.resolve();
+      },
+      
       clear: allTables => {
         if (allTables) {
           set({

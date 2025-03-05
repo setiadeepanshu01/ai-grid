@@ -18,6 +18,9 @@ export interface Store {
   toggleColorScheme: () => void;
   setActivePopover: (id: string | null) => void;
   
+  // CSV/Excel import
+  importCsvData: (data: string[][], preserveExistingColumns?: boolean) => Promise<void>;
+  
   // Authentication actions
   login: (password: string) => Promise<void>;
   logout: () => void;

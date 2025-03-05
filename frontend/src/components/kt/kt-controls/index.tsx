@@ -7,6 +7,7 @@ import { KTGlobalRules } from "./kt-global-rules";
 import { KtResolvedEntities } from "./kt-resolved-entities";
 import { KtDownload } from "./kt-download";
 import { KtChunks } from "./kt-chunks";
+import { KtCsvUpload } from "../kt-csv-upload";
 import { useStore } from "@config/store";
 
 export function KtControls(props: BoxProps) {
@@ -26,6 +27,7 @@ export function KtControls(props: BoxProps) {
       <KTGlobalRules />
       <KtResolvedEntities />
       <KtDownload.Csv />
+      <KtCsvUpload />
       <KtChunks />
       {uploadingFiles && (
         <Group>

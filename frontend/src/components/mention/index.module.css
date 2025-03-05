@@ -9,6 +9,7 @@
 
     .mentions__highlighter {
       padding: var(--padding) !important;
+      white-space: pre-wrap !important; /* Add this to handle multiline text */
     }
 
     .mentions__input {
@@ -17,6 +18,7 @@
       border-radius: var(--mantine-radius-default) !important;
       outline: none !important;
       padding: var(--padding) !important;
+      white-space: pre-wrap !important; /* Add this to handle multiline text */
 
       &:focus {
         border-color: var(--mantine-primary-color-filled) !important;
@@ -25,6 +27,7 @@
 
     .mentions__suggestions {
       background-color: transparent !important;
+      z-index: 1000 !important; /* Ensure suggestions appear above other elements */
     }
   }
 }

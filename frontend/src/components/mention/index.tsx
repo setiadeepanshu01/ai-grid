@@ -1,4 +1,4 @@
-import { ReactNode, useMemo, useCallback } from "react";
+import { ReactNode, useMemo } from "react";
 import { Box, Text, Input, InputWrapperProps, Paper } from "@mantine/core";
 import { useUncontrolled } from "@mantine/hooks";
 import styled from "@emotion/styled";
@@ -40,42 +40,18 @@ export function Mention({
   });
 
   const colors = useMemo(() => {
-    try {
-      if (!value) return [];
-      const matches = [...value.matchAll(/.\[[^\]]+\]\((\w+)\)/g)];
-      return matches.map(match => {
-        try {
-          const group = options.find(option => match[0].startsWith(option.trigger));
-          const option = group?.data.find(item => item.id === match[1]);
-          return (option && group?.color?.(option)) || "transparent";
-        } catch (error) {
-          console.error('Error processing match in Mention component:', error);
-          return "transparent";
-        }
-      });
-    } catch (error) {
-      console.error('Error calculating colors in Mention component:', error);
-      return [];
-    }
+    if (!value) return [];
+    
+    // Use a more robust regex that can handle multiline text
+    // The 's' flag makes . match newlines as well
+    const matches = [...(value.matchAll(/.\[[^\]]+\]\((\w+)\)/gs) || [])];
+    
+    return matches.map(match => {
+      const group = options.find(option => match[0].startsWith(option.trigger));
+      const option = group?.data.find(item => item.id === match[1]);
+      return (option && group?.color?.(option)) || "transparent";
+    });
   }, [value, options]);
-
-  // Create a memoized handler for onChange to prevent unnecessary re-renders
-  const handleChange = useCallback((event: { target: { value: string } }) => {
-    try {
-      setValue(event.target.value);
-    } catch (error) {
-      console.error('Error in Mention component onChange:', error);
-      // Fallback to empty string if there's an error
-      setValue('');
-    }
-  }, [setValue]);
-
-  // Create a memoized handler for suggestions container to prevent unnecessary re-renders
-  const renderSuggestionsContainer = useCallback((node: React.ReactNode) => (
-    <Paper withBorder shadow="sm" p={4}>
-      {node}
-    </Paper>
-  ), []);
 
   return (
     <StyledInputWrapper
@@ -87,31 +63,56 @@ export function Mention({
         disabled={disabled}
         allowSpaceInQuery
         allowSuggestionsAboveCursor
+        forceSuggestionsAboveCursor={true}
         placeholder={placeholder}
         value={value || ''}
-        onChange={handleChange}
+        onChange={e => {
+          console.log("Mention input changed:", e.target.value);
+          setValue(e.target.value);
+        }}
         className="mentions"
         a11ySuggestionsListLabel="Suggested mentions"
-        customSuggestionsContainer={renderSuggestionsContainer}
+        customSuggestionsContainer={node => {
+          console.log("Rendering suggestions container:", node);
+          return (
+            <Paper withBorder shadow="sm" p={4}>
+              {node}
+            </Paper>
+          );
+        }}
+        singleLine={false}
       >
-        {options.map(({ trigger, data, render }) => (
-          <ReactMention
-            key={trigger}
-            trigger={trigger}
-            data={data}
-            appendSpaceOnAdd
-            markup={`${trigger}[__display__](__id__)`}
-            renderSuggestion={(suggestion, _, __, ___, active) => (
-              <Box className={cn(classes.suggestion, active && classes.active)}>
-                {render ? (
-                  render(suggestion)
-                ) : (
-                  <Text>{suggestion.display}</Text>
-                )}
-              </Box>
-            )}
-          />
-        ))}
+        {options.map(({ trigger, data, render }) => {
+          console.log(`Setting up ReactMention with trigger: ${trigger}, data:`, data);
+          return (
+            <ReactMention
+              key={trigger}
+              trigger={trigger}
+              data={data}
+              appendSpaceOnAdd={false}
+              markup={`${trigger}[__display__](__id__)`}
+              displayTransform={(id, display) => {
+                console.log(`Display transform: ${display} (${id})`);
+                return display;
+              }}
+              onAdd={(id, display) => {
+                console.log(`Mention added: ${display} (${id})`);
+              }}
+              renderSuggestion={(suggestion, _, __, ___, active) => {
+                console.log(`Rendering suggestion:`, suggestion);
+                return (
+                  <Box className={cn(classes.suggestion, active && classes.active)}>
+                    {render ? (
+                      render(suggestion)
+                    ) : (
+                      <Text>{suggestion.display}</Text>
+                    )}
+                  </Box>
+                );
+              }}
+            />
+          );
+        })}
       </MentionsInput>
     </StyledInputWrapper>
   );
