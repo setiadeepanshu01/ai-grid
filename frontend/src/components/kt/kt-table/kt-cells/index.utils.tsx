@@ -28,8 +28,18 @@ const setupGlobalHandlers = () => {
     const isInsideMantineMenu = !!(e.target as Element).closest('.mantine-Menu-dropdown') || 
                                !!(e.target as Element).closest('.mantine-Menu-item');
     
+    // Check if the click is on a menu item
+    const isMenuItemClick = !!(e.target as Element).closest('.mantine-Menu-item');
+    
     // If click is inside the popover or a Mantine Menu, don't close it
-    if (isInsidePopover || isInsideMantineMenu) return;
+    if (isInsidePopover || isInsideMantineMenu) {
+      // If it's a menu item click, prevent the default behavior
+      if (isMenuItemClick) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
     
     // If click is outside, close the popover
     store.setActivePopover(null);

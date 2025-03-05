@@ -19,6 +19,7 @@ interface Props extends BoxProps {
   menu?: ReactNode;
   menuProps?: MenuProps;
   dropdownProps?: MenuDropdownProps;
+  closeOnItemClick?: boolean;
 }
 
 export function MenuButton({
@@ -28,6 +29,7 @@ export function MenuButton({
   menu,
   menuProps,
   dropdownProps,
+  closeOnItemClick = true,
   ...props
 }: Props) {
   return (
@@ -36,7 +38,7 @@ export function MenuButton({
       offset={2}
       withinPortal={true}
       disabled={disabled}
-      closeOnItemClick={true}
+      closeOnItemClick={closeOnItemClick}
       {...menuProps}
     >
       <Menu.Target>
@@ -52,7 +54,19 @@ export function MenuButton({
           </Group>
         </Box>
       </Menu.Target>
-      <Menu.Dropdown {...dropdownProps}>{menu}</Menu.Dropdown>
+      <Menu.Dropdown 
+        {...dropdownProps} 
+        onClick={(e) => {
+          // Prevent the click from propagating to parent elements
+          e.stopPropagation();
+          // Prevent the default behavior which might close the menu
+          if (!closeOnItemClick && (e.target as Element).closest('.mantine-Menu-item')) {
+            e.preventDefault();
+          }
+        }}
+      >
+        {menu}
+      </Menu.Dropdown>
     </Menu>
   );
 }

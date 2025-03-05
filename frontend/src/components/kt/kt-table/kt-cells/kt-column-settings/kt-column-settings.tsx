@@ -238,6 +238,7 @@ export function KtColumnSettings({
       <MenuButton
         mt="xs"
         label="Type"
+        closeOnItemClick={false}
         rightSection={
           <Group c="dimmed">
             {TypeIcon && <TypeIcon size={16} />}
@@ -260,6 +261,7 @@ export function KtColumnSettings({
       <MenuButton
         mt="xs"
         label="Generate answers"
+        closeOnItemClick={false}
         rightSection={
           <Text c="dimmed">{state.generate ? "Enabled" : "Disabled"}</Text>
         }
@@ -281,6 +283,7 @@ export function KtColumnSettings({
           <MenuButton
             mt="xs"
             label="Rules"
+            closeOnItemClick={false}
             dropdownProps={{ p: "sm" }}
             menu={rulesMenu}
             rightSection={
