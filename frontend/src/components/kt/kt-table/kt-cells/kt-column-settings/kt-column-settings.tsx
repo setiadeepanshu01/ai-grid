@@ -147,14 +147,8 @@ export function KtColumnSettings({
                   handleRuleTypeChange(rule, type as AnswerTableRule["type"]);
                 }
               }}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               data-mantine-stop-propagation="true"
             />
             {rule.type === "max_length" ? (
@@ -169,14 +163,8 @@ export function KtColumnSettings({
                     length: isString(length) ? 1 : length
                   })
                 }
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 data-mantine-stop-propagation="true"
               />
             ) : (
@@ -185,14 +173,8 @@ export function KtColumnSettings({
                 placeholder="Values"
                 value={rule.options ?? []}
                 onChange={options => handleRuleChange(rule, { options })}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 data-mantine-stop-propagation="true"
               />
             )}
@@ -208,14 +190,10 @@ export function KtColumnSettings({
             <ActionIcon 
               color="red" 
               onClick={(e) => {
-                e.preventDefault();
                 e.stopPropagation();
                 handleDeleteRule(rule);
               }}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
+              onMouseDown={(e) => e.stopPropagation()}
               data-mantine-stop-propagation="true"
             >
               <IconTrash />
@@ -247,14 +225,10 @@ export function KtColumnSettings({
           flex={1} 
           leftSection={<IconPlus />} 
           onClick={(e) => {
-            e.preventDefault();
             e.stopPropagation();
             handleAddRule();
           }}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
+          onMouseDown={(e) => e.stopPropagation()}
           data-mantine-stop-propagation="true"
         >
           Add rule
@@ -265,14 +239,10 @@ export function KtColumnSettings({
           variant="light"
           leftSection={<IconTrash />}
           onClick={(e) => {
-            e.preventDefault();
             e.stopPropagation();
             handleSet({ rules: [] });
           }}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
+          onMouseDown={(e) => e.stopPropagation()}
           data-mantine-stop-propagation="true"
         >
           Clear
@@ -335,15 +305,10 @@ export function KtColumnSettings({
         menu={typeOptions.map(({ value: type, label, icon: Icon }) => (
           <Menu.Item
             key={type}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
-              e.preventDefault();
               e.stopPropagation();
               handleSet({ type });
-              return false;
             }}
             leftSection={<Icon />}
             data-mantine-stop-propagation="true"
@@ -361,15 +326,10 @@ export function KtColumnSettings({
         menu={generateOptions.map(({ value: generate, label, icon: Icon }) => (
           <Menu.Item
             key={String(generate)}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
-              e.preventDefault();
               e.stopPropagation();
               handleSet({ generate });
-              return false;
             }}
             leftSection={<Icon />}
             data-mantine-stop-propagation="true"
