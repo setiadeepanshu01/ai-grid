@@ -3,9 +3,10 @@
 import asyncio
 import logging
 import uuid
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 
 from app.core.dependencies import get_llm_service, get_vector_db_service
 from app.schemas.query_api import (
@@ -14,6 +15,13 @@ from app.schemas.query_api import (
     QueryRequestSchema,
     QueryResult,
 )
+
+# Schema for cancel request
+class CancelRequestSchema(BaseModel):
+    """Schema for cancellation requests."""
+    task_ids: Optional[List[str]] = None
+    cancel_all: bool = False
+
 from app.services.llm.base import CompletionService
 from app.services.query_service import (
     decomposition_query,
@@ -282,6 +290,57 @@ async def run_batch_queries(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_detail
         )
+
+
+@router.post("/cancel", response_model=Dict[str, Any])
+async def cancel_queries(
+    request: CancelRequestSchema,
+    llm_service: CompletionService = Depends(get_llm_service),
+) -> Dict[str, Any]:
+    """
+    Cancel running queries.
+    
+    This endpoint allows cancelling specific queries by their task IDs or all running queries.
+    
+    Parameters
+    ----------
+    task_ids : List[str], optional
+        The IDs of the tasks to cancel. If not provided and cancel_all is False, no tasks will be cancelled.
+    cancel_all : bool, optional
+        Whether to cancel all running tasks. Defaults to False.
+        
+    Returns
+    -------
+    Dict[str, Any]
+        A message indicating the number of tasks cancelled.
+    """
+    cancelled_count = 0
+    
+    if request.cancel_all:
+        # Cancel all running tasks
+        cancelled_count = llm_service.cancel_all_tasks()
+        return {
+            "success": True,
+            "message": f"Cancelled all tasks ({cancelled_count} tasks)",
+            "cancelled_count": cancelled_count
+        }
+    elif request.task_ids:
+        # Cancel specific tasks
+        for task_id in request.task_ids:
+            if llm_service.cancel_task(task_id):
+                cancelled_count += 1
+        
+        return {
+            "success": True,
+            "message": f"Cancelled {cancelled_count}/{len(request.task_ids)} tasks",
+            "cancelled_count": cancelled_count
+        }
+    else:
+        return {
+            "success": False,
+            "message": "No tasks to cancel. Provide task_ids or set cancel_all=true",
+            "cancelled_count": 0
+        }
 
 
 @router.get("/test-error", response_model=Dict[str, Any])

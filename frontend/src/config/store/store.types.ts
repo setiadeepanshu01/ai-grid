@@ -13,6 +13,7 @@ export interface Store {
   activeTableId: string;
   activePopoverId: string | null;
   documentPreviews: Record<string, string[]>; // Store document preview content by document ID
+  requestCancelSignal: { isCancelled: boolean }; // Signal to cancel ongoing requests
   auth: AuthState;
 
   toggleColorScheme: () => void;
@@ -78,6 +79,10 @@ export interface Store {
   loadLatestTableState: () => Promise<void>;
   
   clear: (allTables?: boolean) => void;
+  
+  // Request cancellation
+  cancelRequests: () => Promise<void>;
+  resetCancelState: () => void;
 }
 
 export interface ResolvedEntity {

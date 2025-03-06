@@ -25,6 +25,8 @@ import {
 } from "./store.utils";
 import { AnswerTableRow, ResolvedEntity, SourceData, Store } from "./store.types";
 import { ApiError, runBatchQueries, uploadFile } from "../api";
+// Import api module for dynamic access to cancelAllQueries
+import * as apiModule from "../api";
 import { AuthError, login as apiLogin, verifyToken } from "../../services/api/auth";
 import { 
   saveTableState as apiSaveTableState, 
@@ -41,6 +43,7 @@ export const useStore = create<Store>()(
       ...getInitialData(),
       activePopoverId: null,
       documentPreviews: {}, // Initialize empty document previews
+      requestCancelSignal: { isCancelled: false },
       auth: {
         token: null,
         isAuthenticated: false,
@@ -857,12 +860,17 @@ export const useStore = create<Store>()(
         // Use individual processing for small batches or batch processing for larger ones
         const useIndividualProcessing = queriesToRun.length <= 5;
         
+        // Reset cancel signal before starting a new batch
+        get().resetCancelState();
+        
         // Run batch queries with progressive updates
         runBatchQueries(
           queriesToRun,
           {
             batchSize: useBatchSize,
             processIndividually: useIndividualProcessing,
+            // @ts-ignore - cancelSignal is defined in the API but TypeScript is not detecting it
+            cancelSignal: get().requestCancelSignal,
             onQueryProgress: (result, index) => {
               if (result && !result.error && index < queriesToRun.length) {
                 processQueryResult(result, queriesToRun[index]);
@@ -884,7 +892,11 @@ export const useStore = create<Store>()(
             }
           }
         ).catch((error: any) => {
-          console.error('Error running batch queries:', error);
+          // Log the error but don't show to user if it's a cancellation
+          if (!(error instanceof ApiError && error.status === 499) && 
+              !(error.name === 'AbortError')) {
+            console.error('Error running batch queries:', error);
+          }
           
           // Clear loading state for all remaining cells in the batch that haven't been processed
           const remainingLoadingCells = getTable(activeTableId).loadingCells;
@@ -894,8 +906,19 @@ export const useStore = create<Store>()(
             });
           }
           
-          // Show error notification
-          if (error instanceof ApiError) {
+          // Handle cancellation separately
+          if (error instanceof ApiError && error.status === 499) {
+            // This was a user-initiated cancellation, don't show as an error
+            console.log('Requests cancelled by user');
+            // No notification needed as cancelRequests already shows one
+          }
+          // Handle AbortError (browser's native abort)
+          else if (error.name === 'AbortError') {
+            console.log('Requests aborted by browser');
+            // No notification needed as cancelRequests already shows one
+          }
+          // Show error notification for other errors
+          else if (error instanceof ApiError) {
             notifications.show({
               title: 'Batch query failed',
               message: error.message,
@@ -1195,6 +1218,41 @@ export const useStore = create<Store>()(
             globalRules: table.globalRules.map(rule => ({ ...rule, resolvedEntities: [] }))
           });
         }
+      },
+      
+      // Request cancellation methods
+      cancelRequests: async () => {
+        set({ requestCancelSignal: { isCancelled: true } });
+        
+        // Reset loading state for all cells
+        const { activeTableId, editTable } = get();
+        editTable(activeTableId, {
+          loadingCells: {}
+        });
+        
+        // Call the backend to cancel all active queries
+        try {
+          // Use the dynamically imported module function
+          const result = await apiModule.cancelAllQueries();
+          
+          notifications.show({
+            title: 'Requests cancelled',
+            message: `All pending requests have been cancelled (${result.cancelled_count} on the server)`,
+            color: 'blue'
+          });
+        } catch (error) {
+          console.error('Error cancelling requests on the server:', error);
+          
+          notifications.show({
+            title: 'Requests cancelled',
+            message: 'All pending requests have been cancelled on the client. Server cancellation failed.',
+            color: 'blue'
+          });
+        }
+      },
+      
+      resetCancelState: () => {
+        set({ requestCancelSignal: { isCancelled: false } });
       }
     }),
     {

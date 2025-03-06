@@ -8,6 +8,7 @@ import { KtResolvedEntities } from "./kt-resolved-entities";
 import { KtDownload } from "./kt-download";
 import { KtChunks } from "./kt-chunks";
 import { KtCsvUpload } from "../kt-csv-upload";
+import { KtCancel } from "./kt-cancel";
 import { useStore } from "@config/store";
 
 export function KtControls(props: BoxProps) {
@@ -29,6 +30,7 @@ export function KtControls(props: BoxProps) {
       <KtDownload.Csv />
       <KtCsvUpload />
       <KtChunks />
+      <KtCancel />
       {uploadingFiles && (
         <Group>
           <Loader size="xs" />

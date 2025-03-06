@@ -176,6 +176,46 @@ export const fetchDocumentPreview = async (documentId: string): Promise<string> 
   }
 };
 /**
+ * Interface defining options for batch query processing
+ */
+export interface BatchQueryOptions {
+  batchSize?: number;
+  processIndividually?: boolean;
+  onBatchProgress?: (results: any[], batchIndex: number, totalBatches: number) => void;
+  onQueryProgress?: (result: any, index: number, total: number) => void;
+  cancelSignal?: { isCancelled: boolean };
+}
+
+/**
+ * Cancels all active queries by calling the backend cancellation endpoint.
+ * 
+ * @returns Promise resolving to the cancellation result from the server
+ */
+export const cancelAllQueries = async (): Promise<any> => {
+  try {
+    const response = await fetch(API_ENDPOINTS.CANCEL_QUERIES, {
+      method: 'POST',
+      headers: {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        cancel_all: true
+      })
+    });
+    
+    if (!response.ok) {
+      throw new ApiError(`Failed to cancel queries: ${response.statusText}`, response.status);
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('Error cancelling queries:', error);
+    throw error;
+  }
+};
+
+/**
  * Runs batch queries with improved handling for large batches.
  * This implementation supports both single batch mode and individual processing.
  * 
@@ -185,18 +225,14 @@ export const fetchDocumentPreview = async (documentId: string): Promise<string> 
  */
 export const runBatchQueries = async (
   queries: Array<{ row: any; column: any; globalRules?: any[]; }>,
-  options: {
-    batchSize?: number;
-    processIndividually?: boolean;
-    onBatchProgress?: (results: any[], batchIndex: number, totalBatches: number) => void;
-    onQueryProgress?: (result: any, index: number, total: number) => void;
-  } = {}
+  options: BatchQueryOptions = {}
 ): Promise<any[]> => {
   const {
     batchSize = 10,
     processIndividually = false,
     onBatchProgress,
-    onQueryProgress
+    onQueryProgress,
+    cancelSignal
   } = options;
   
   // Format the queries for the batch endpoint
@@ -223,45 +259,85 @@ export const runBatchQueries = async (
     query._originalQuery.index = index;
   });
   
+  // Check if operation is cancelled before starting
+  if (cancelSignal?.isCancelled) {
+    console.log('Operation cancelled before starting');
+    return new Array(formattedQueries.length); // Return empty results array
+  }
+  
   // If processing individually, run each query separately and collect results
   if (processIndividually) {
     const results: any[] = new Array(formattedQueries.length);
-    const promises = formattedQueries.map(async (query, index) => {
-      try {
-        const response = await fetch(API_ENDPOINTS.QUERY, {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          mode: 'cors',
-          credentials: 'include',
-          body: JSON.stringify({
-            document_id: query.document_id,
-            prompt: query.prompt
-          }),
-        });
-        
-        if (!response.ok) {
-          throw new ApiError(`Query failed: ${response.statusText}`, response.status);
-        }
-        
-        const result = await response.json();
-        results[index] = result;
-        
-        // Call progress callback if provided
-        if (onQueryProgress) {
-          onQueryProgress(result, index, formattedQueries.length);
-        }
-        
-        return result;
-      } catch (error) {
-        console.error(`Error running individual query ${index}:`, error);
-        if (onQueryProgress) {
-          onQueryProgress({ error }, index, formattedQueries.length);
-        }
-        throw error;
-      }
-    });
+    const controllers: AbortController[] = formattedQueries.map(() => new AbortController());
     
-    await Promise.allSettled(promises);
+    // Setup a checker to abort pending requests if cancelSignal becomes true
+    const checkCancellation = setInterval(() => {
+      if (cancelSignal?.isCancelled) {
+        console.log('Cancelling all pending individual requests');
+        controllers.forEach(controller => controller.abort());
+        clearInterval(checkCancellation);
+      }
+    }, 100); // Check every 100ms
+    
+    try {
+      const promises = formattedQueries.map(async (query, index) => {
+        // Check for cancellation before each query
+        if (cancelSignal?.isCancelled) {
+          throw new ApiError('Operation cancelled by user', 499);
+        }
+        
+        try {
+          const response = await fetch(API_ENDPOINTS.QUERY, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            mode: 'cors',
+            credentials: 'include',
+            body: JSON.stringify({
+              document_id: query.document_id,
+              prompt: query.prompt
+            }),
+            signal: controllers[index].signal,
+          });
+          
+          // Check for cancellation after response but before processing
+          if (cancelSignal?.isCancelled) {
+            throw new ApiError('Operation cancelled by user', 499);
+          }
+          
+          if (!response.ok) {
+            throw new ApiError(`Query failed: ${response.statusText}`, response.status);
+          }
+          
+          const result = await response.json();
+          results[index] = result;
+          
+          // Call progress callback if provided
+          if (onQueryProgress && !cancelSignal?.isCancelled) {
+            onQueryProgress(result, index, formattedQueries.length);
+          }
+          
+          return result;
+        } catch (error: unknown) {
+          // Check if this is an AbortError
+          if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
+            console.log(`Request ${index} aborted due to user cancellation`);
+            throw new ApiError('Operation cancelled by user', 499);
+          }
+          
+          console.error(`Error running individual query ${index}:`, error);
+          if (onQueryProgress && !cancelSignal?.isCancelled) {
+            onQueryProgress({ error }, index, formattedQueries.length);
+          }
+          throw error;
+        }
+      });
+      
+      await Promise.allSettled(promises);
+    } finally {
+      // Clean up the interval regardless of outcome
+      clearInterval(checkCancellation);
+    }
+    
     return results;
   }
   
@@ -277,38 +353,87 @@ export const runBatchQueries = async (
   
   // Process each batch
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    // Check for cancellation before each batch
+    if (cancelSignal?.isCancelled) {
+      console.log('Operation cancelled - skipping all remaining batches');
+      // End immediately by returning partially filled results
+      return results;
+    }
+    
     const batch = batches[batchIndex];
     
     try {
       console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} queries`);
       
-      const response = await fetch(API_ENDPOINTS.BATCH_QUERY, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        mode: 'cors',
-        credentials: 'include',
-        body: JSON.stringify(batch.map(q => ({ document_id: q.document_id, prompt: q.prompt }))),
-      });
+      // Create an AbortController for this batch that can be cancelled
+      const controller = new AbortController();
       
-      if (!response.ok) {
-        throw new ApiError(`Batch query failed: ${response.statusText}`, response.status);
-      }
+      // Setup a checker that will abort the request if cancelSignal becomes true
+      const checkCancellation = setInterval(() => {
+        if (cancelSignal?.isCancelled) {
+          clearInterval(checkCancellation);
+          controller.abort();
+        }
+      }, 100); // Check every 100ms
       
-      const batchResults = await response.json();
-      
-      // Map batch results to the correct positions in the final results array
-      batchResults.forEach((result: any, resultIndex: number) => {
-        const originalIndex = batch[resultIndex]._originalQuery.index;
-        results[originalIndex] = result;
-      });
-      
-      // Call batch progress callback if provided
-      if (onBatchProgress) {
-        onBatchProgress(batchResults, batchIndex, batches.length);
+      try {
+        const response = await fetch(API_ENDPOINTS.BATCH_QUERY, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          mode: 'cors',
+          credentials: 'include',
+          body: JSON.stringify(batch.map(q => ({ document_id: q.document_id, prompt: q.prompt }))),
+          signal: controller.signal,
+        });
+        
+        // Clear the interval since we don't need it anymore
+        clearInterval(checkCancellation);
+        
+        // Check for cancellation after response but before processing
+        if (cancelSignal?.isCancelled) {
+          throw new ApiError('Operation cancelled by user', 499);
+        }
+        
+        if (!response.ok) {
+          throw new ApiError(`Batch query failed: ${response.statusText}`, response.status);
+        }
+        
+        const batchResults = await response.json();
+        
+        // Map batch results to the correct positions in the final results array
+        batchResults.forEach((result: any, resultIndex: number) => {
+          const originalIndex = batch[resultIndex]._originalQuery.index;
+          results[originalIndex] = result;
+        });
+        
+        // Call batch progress callback if provided
+        if (onBatchProgress && !cancelSignal?.isCancelled) {
+          onBatchProgress(batchResults, batchIndex, batches.length);
+        }
+      } catch (fetchError: unknown) {
+        // Clear the interval if there was an error
+        clearInterval(checkCancellation);
+        
+        // Handle abort error from fetch specifically
+        if (fetchError && typeof fetchError === 'object' && 'name' in fetchError && fetchError.name === 'AbortError') {
+          console.log('Request aborted due to user cancellation');
+          throw new ApiError('Operation cancelled by user', 499);
+        }
+        
+        // Rethrow the original error
+        throw fetchError;
       }
       
     } catch (error) {
       console.error(`Error running batch ${batchIndex + 1}:`, error);
+      
+      // Check if this is a cancellation error and break out of the loop
+      if (error instanceof ApiError && error.status === 499) {
+        console.log('Cancelling all remaining batches');
+        throw error;  // Re-throw to exit the outer loop
+      }
+      
+      // Re-throw other errors
       throw error;
     }
   }
@@ -337,6 +462,7 @@ export const API_ENDPOINTS = {
   // Query endpoints
   QUERY: `${API_URL}/api/v1/query`,
   BATCH_QUERY: `${API_URL}/api/v1/query/batch`,
+  CANCEL_QUERIES: `${API_URL}/api/v1/query/cancel`,
   
   // Health check
   HEALTH: `${API_URL}/ping`,
