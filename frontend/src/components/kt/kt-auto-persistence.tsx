@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useStore } from "@config/store";
 import { debounce } from "lodash-es";
-import { notifications } from "@utils/notifications";
 
 /**
  * Component that automatically saves and loads table state
@@ -40,13 +39,8 @@ export function KtAutoPersistence() {
           isFirstLoad.current = false;
         })
         .catch((error) => {
+          // Just log the error without showing notifications
           console.error('Error loading table state:', error);
-          // Only show error notifications
-          notifications.show({
-            title: 'Load failed',
-            message: 'Failed to load table state',
-            color: 'red'
-          });
         });
     }
   }, [isAuthenticated]);
@@ -57,18 +51,14 @@ export function KtAutoPersistence() {
     
     // Debounce the save operation to avoid too many saves
     const debouncedSave = debounce(() => {
+      // Try to save to the backend without showing errors to the user
       useStore.getState().saveTableState()
         .then(() => {
           // No logs or notifications for normal operation
         })
         .catch((error) => {
+          // Just log the error without showing notifications
           console.error('Error saving table state:', error);
-          // Only show error notifications
-          notifications.show({
-            title: 'Save failed',
-            message: 'Failed to save table state',
-            color: 'red'
-          });
         });
     }, 2000); // Save after 2 seconds of inactivity
     

@@ -1101,30 +1101,36 @@ export const useStore = create<Store>()(
       saveTableState: async () => {
         const { activeTableId, getTable, auth } = get();
         
-          // Only save if authenticated
-          if (!auth.isAuthenticated || !auth.token) {
-            return Promise.resolve();
-          }
+        // Only save if authenticated
+        if (!auth.isAuthenticated || !auth.token) {
+          return Promise.resolve();
+        }
         
         try {
           const table = getTable(activeTableId);
           
-          // First, check if the table state already exists by listing all table states
-          const response = await listTableStates();
-          const existingState = response.items?.find(item => item.id === table.id);
-          
-          if (existingState) {
-            // If it exists, update it
-            await apiUpdateTableState(table.id, table);
-          } else {
-            // If it doesn't exist, create a new one
-            await apiSaveTableState(table.id, table.name, table);
+          try {
+            // First, check if the table state already exists by listing all table states
+            const response = await listTableStates();
+            const existingState = response.items?.find(item => item.id === table.id);
+            
+            if (existingState) {
+              // If it exists, update it
+              await apiUpdateTableState(table.id, table);
+            } else {
+              // If it doesn't exist, create a new one
+              await apiSaveTableState(table.id, table.name, table);
+            }
+            
+            return Promise.resolve();
+          } catch (apiError) {
+            // Log the error but don't reject the promise
+            console.error('Error saving table state to API:', apiError);
+            return Promise.resolve();
           }
-          
-          return Promise.resolve();
         } catch (error) {
-          console.error('Error auto-saving table state:', error);
-          return Promise.reject(error);
+          console.error('Error preparing table state for save:', error);
+          return Promise.resolve(); // Resolve instead of reject to avoid error notifications
         }
       },
       
@@ -1137,44 +1143,50 @@ export const useStore = create<Store>()(
         }
         
         try {
-          // Get all table states
-          const response = await listTableStates();
-          
-          // If no table states, return
-          if (!response.items || response.items.length === 0) {
+          try {
+            // Get all table states
+            const response = await listTableStates();
+            
+            // If no table states, return
+            if (!response.items || response.items.length === 0) {
+              return Promise.resolve();
+            }
+            
+            // Sort by updated_at to get the most recent first
+            const sortedStates = response.items.sort((a, b) => 
+              new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+            );
+            
+            // Load all table states into the store
+            const tables = sortedStates.map(state => ({
+              id: state.id,
+              name: state.name,
+              columns: state.data.columns || [],
+              rows: state.data.rows || [],
+              globalRules: state.data.globalRules || [],
+              filters: state.data.filters || [],
+              chunks: state.data.chunks || {},
+              openedChunks: state.data.openedChunks || [],
+              loadingCells: {},
+              uploadingFiles: false
+            }));
+            
+            // Set all tables and make the most recent one active
+            set({
+              tables,
+              activeTableId: tables.length > 0 ? tables[0].id : get().activeTableId
+            });
+            
+            // No logs for normal operation
+            return Promise.resolve();
+          } catch (apiError) {
+            // Log the error but don't reject the promise
+            console.error('Error loading table state from API:', apiError);
             return Promise.resolve();
           }
-          
-          // Sort by updated_at to get the most recent first
-          const sortedStates = response.items.sort((a, b) => 
-            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-          );
-          
-          // Load all table states into the store
-          const tables = sortedStates.map(state => ({
-            id: state.id,
-            name: state.name,
-            columns: state.data.columns || [],
-            rows: state.data.rows || [],
-            globalRules: state.data.globalRules || [],
-            filters: state.data.filters || [],
-            chunks: state.data.chunks || {},
-            openedChunks: state.data.openedChunks || [],
-            loadingCells: {},
-            uploadingFiles: false
-          }));
-          
-          // Set all tables and make the most recent one active
-          set({
-            tables,
-            activeTableId: tables.length > 0 ? tables[0].id : get().activeTableId
-          });
-          
-          // No logs for normal operation
-          return Promise.resolve();
         } catch (error) {
-          console.error('Error auto-loading table state:', error);
-          return Promise.reject(error);
+          console.error('Error processing loaded table state:', error);
+          return Promise.resolve(); // Resolve instead of reject to avoid error notifications
         }
       },
       // Import CSV data into the grid

@@ -4,6 +4,8 @@
 import { z } from 'zod';
 // Get the API URL from environment variables or use a default
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Log the API URL for debugging
+console.log('API URL:', API_URL);
 // API error class
 export class ApiError extends Error {
   status: number;
@@ -348,6 +350,8 @@ export const getAuthHeaders = () => {
   
   return {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'Origin': 'https://ai-grid.onrender.com',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {})
   };
 };

@@ -1,4 +1,4 @@
-import { API_ENDPOINTS, DEFAULT_HEADERS } from '../../config/api';
+import { API_ENDPOINTS, getAuthHeaders } from '../../config/api';
 import { useStore } from '../../config/store';
 
 // Error class for table state API errors
@@ -38,12 +38,16 @@ export async function saveTableState(tableId: string, tableName: string, tableDa
       throw new TableStateError('Authentication required');
     }
     
+    // Log the API endpoint and headers for debugging
+    const headers = getAuthHeaders();
+    console.log('Saving table state to:', `${API_ENDPOINTS.API_V1}/table-state/`);
+    console.log('With headers:', JSON.stringify(headers));
+    
     const response = await fetch(`${API_ENDPOINTS.API_V1}/table-state/`, {
       method: 'POST',
-      headers: {
-        ...DEFAULT_HEADERS,
-        'Authorization': `Bearer ${token}`
-      },
+      headers: headers,
+      mode: 'cors',
+      credentials: 'include',
       body: JSON.stringify({
         id: tableId,
         name: tableName,
@@ -51,9 +55,18 @@ export async function saveTableState(tableId: string, tableName: string, tableDa
       })
     });
     
+    console.log('Save table state response:', response.status, response.statusText);
+    
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new TableStateError(errorData.detail || 'Failed to save table state');
+      let errorMessage = 'Failed to save table state';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.detail || errorMessage;
+      } catch (e) {
+        // If we can't parse the error response, just use the status text
+        errorMessage = `Failed to save table state: ${response.statusText}`;
+      }
+      throw new TableStateError(errorMessage);
     }
     
     return await response.json();
@@ -79,20 +92,33 @@ export async function updateTableState(tableId: string, tableData: any): Promise
       throw new TableStateError('Authentication required');
     }
     
+    // Log the API endpoint and headers for debugging
+    const headers = getAuthHeaders();
+    console.log('Updating table state at:', `${API_ENDPOINTS.API_V1}/table-state/${tableId}`);
+    console.log('With headers:', JSON.stringify(headers));
+    
     const response = await fetch(`${API_ENDPOINTS.API_V1}/table-state/${tableId}`, {
       method: 'PUT',
-      headers: {
-        ...DEFAULT_HEADERS,
-        'Authorization': `Bearer ${token}`
-      },
+      headers: headers,
+      mode: 'cors',
+      credentials: 'include',
       body: JSON.stringify({
         data: tableData
       })
     });
     
+    console.log('Update table state response:', response.status, response.statusText);
+    
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new TableStateError(errorData.detail || 'Failed to update table state');
+      let errorMessage = 'Failed to update table state';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.detail || errorMessage;
+      } catch (e) {
+        // If we can't parse the error response, just use the status text
+        errorMessage = `Failed to update table state: ${response.statusText}`;
+      }
+      throw new TableStateError(errorMessage);
     }
     
     return await response.json();
@@ -119,10 +145,9 @@ export async function getTableState(tableId: string): Promise<TableState> {
     
     const response = await fetch(`${API_ENDPOINTS.API_V1}/table-state/${tableId}`, {
       method: 'GET',
-      headers: {
-        ...DEFAULT_HEADERS,
-        'Authorization': `Bearer ${token}`
-      }
+      headers: getAuthHeaders(),
+      mode: 'cors',
+      credentials: 'include'
     });
     
     if (!response.ok) {
@@ -155,17 +180,30 @@ export async function listTableStates(): Promise<TableStateListResponse> {
       throw new TableStateError('Authentication required');
     }
     
+    // Log the API endpoint and headers for debugging
+    const headers = getAuthHeaders();
+    console.log('Listing table states from:', `${API_ENDPOINTS.API_V1}/table-state/`);
+    console.log('With headers:', JSON.stringify(headers));
+    
     const response = await fetch(`${API_ENDPOINTS.API_V1}/table-state/`, {
       method: 'GET',
-      headers: {
-        ...DEFAULT_HEADERS,
-        'Authorization': `Bearer ${token}`
-      }
+      headers: headers,
+      mode: 'cors',
+      credentials: 'include'
     });
     
+    console.log('List table states response:', response.status, response.statusText);
+    
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new TableStateError(errorData.detail || 'Failed to list table states');
+      let errorMessage = 'Failed to list table states';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.detail || errorMessage;
+      } catch (e) {
+        // If we can't parse the error response, just use the status text
+        errorMessage = `Failed to list table states: ${response.statusText}`;
+      }
+      throw new TableStateError(errorMessage);
     }
     
     return await response.json();
@@ -191,10 +229,9 @@ export async function deleteTableState(tableId: string): Promise<void> {
     
     const response = await fetch(`${API_ENDPOINTS.API_V1}/table-state/${tableId}`, {
       method: 'DELETE',
-      headers: {
-        ...DEFAULT_HEADERS,
-        'Authorization': `Bearer ${token}`
-      }
+      headers: getAuthHeaders(),
+      mode: 'cors',
+      credentials: 'include'
     });
     
     if (!response.ok) {
