@@ -52,6 +52,7 @@ export function KtCsvUpload() {
           // Import data directly into the grid
           try {
             const store = useStore.getState();
+            const isAuthenticated = store.auth.isAuthenticated;
             
             // Get header row (first row of CSV)
             const headerRow = data[0];
@@ -78,7 +79,39 @@ export function KtCsvUpload() {
               // Add cell data
               rowData.forEach((cellValue, colIndex) => {
                 if (colIndex < newColumns.length) {
-                  row.cells[newColumns[colIndex].id] = cellValue ? cellValue : '';
+                  // Check if the value is undefined or null first
+                  if (cellValue === null || cellValue === undefined) {
+                    row.cells[newColumns[colIndex].id] = '';
+                    return;
+                  }
+                  
+                  // Make sure we're working with a string
+                  let value = String(cellValue);
+                  
+                  // If it's a single quote character, replace with empty string
+                  if (value === '"') {
+                    row.cells[newColumns[colIndex].id] = '';
+                    return;
+                  }
+                  
+                  // If it's just whitespace, preserve it
+                  if (value.trim() === '') {
+                    row.cells[newColumns[colIndex].id] = value;
+                    return;
+                  }
+                  
+                  // Handle quoted empty strings (like "")
+                  if (value === '""') {
+                    row.cells[newColumns[colIndex].id] = '';
+                    return;
+                  }
+                  
+                  // Remove surrounding quotes if they exist
+                  if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
+                    value = value.substring(1, value.length - 1);
+                  }
+                  
+                  row.cells[newColumns[colIndex].id] = value;
                 }
               });
               
@@ -93,23 +126,42 @@ export function KtCsvUpload() {
               rows: newRows
             });
             
-            // Force a UI refresh
-            store.saveTableState();
-            
-            console.log("CSV import successful");
-            console.log("New columns:", newColumns);
-            console.log("New rows:", newRows);
-            console.log("Current table state:", store.getTable());
+            // Force a UI refresh and save to server if authenticated
+            try {
+              await store.saveTableState();
+              
+              console.log("CSV import successful");
+              console.log("New columns:", newColumns);
+              console.log("New rows:", newRows);
+              console.log("Current table state:", store.getTable());
+              
+              notifications.show({
+                title: 'CSV imported',
+                message: `Successfully imported data from ${selectedFile.name}`,
+                color: 'green'
+              });
+            } catch (saveError) {
+              console.error("Error saving table state:", saveError);
+              throw new Error(
+                isAuthenticated 
+                  ? "Error saving data to server. Please try again." 
+                  : "Error saving data to browser storage. The file may be too large. Try logging in to use server storage."
+              );
+            }
           } catch (error) {
             console.error("Error importing CSV data:", error);
+            
+            // Check if the error is related to storage quota
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            if (errorMessage.includes('quota') || errorMessage.includes('storage')) {
+              throw new Error(
+                "Failed to save data: Browser storage limit exceeded. " +
+                "Please try a smaller file."
+              );
+            }
+            
             throw error;
           }
-          
-          notifications.show({
-            title: 'CSV imported',
-            message: `Successfully imported data from ${selectedFile.name}`,
-            color: 'green'
-          });
         } catch (error) {
           console.error('Error processing CSV file:', error);
           notifications.show({
@@ -202,7 +254,31 @@ export function KtCsvUpload() {
       result.push(row);
     }
     
-    return result;
+    // Post-process to clean up the data
+    // This helps handle edge cases with quotes and empty cells
+    return result.map(row => 
+      row.map(cell => {
+        // Special handling for single quotes
+        if (cell === '"') return '';
+        
+        // Handle whitespace-only cells (preserve them)
+        if (cell.trim() === '' && cell !== '') return cell;
+        
+        // Handle quoted empty strings (like "")
+        if (cell === '""') return '';
+        
+        // Some CSV formats encode a blank cell as a single quote character
+        // Check for this specific pattern
+        if (cell.trim() === '"') return '';
+        
+        // Handle quoted strings - remove surrounding quotes
+        if (cell.startsWith('"') && cell.endsWith('"') && cell.length >= 2) {
+          return cell.substring(1, cell.length - 1);
+        }
+        
+        return cell;
+      })
+    );
   };
 
   return (
@@ -220,6 +296,11 @@ export function KtCsvUpload() {
         <Text mb="md">
           Note: Multi-line content in cells will be preserved.
         </Text>
+        {selectedFile && selectedFile.size > 1000000 && !useStore.getState().auth.isAuthenticated && (
+          <Text mb="md" color="orange" fw={500}>
+            Warning: This is a large CSV file ({(selectedFile.size / (1024 * 1024)).toFixed(2)} MB).
+          </Text>
+        )}
         <Text mb="xl" fw={500}>
           Are you sure you want to continue?
         </Text>

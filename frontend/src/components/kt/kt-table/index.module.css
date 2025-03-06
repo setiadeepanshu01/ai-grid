@@ -3,6 +3,9 @@
     var(--mantine-color-gray-3),
     var(--mantine-color-dark-4)
   );
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 
   /* Styles for drag and drop */
   :global {
@@ -70,6 +73,9 @@
     .rg-header-cell {
       padding: var(--mantine-spacing-xs) !important;
       font-weight: 500 !important;
+      position: sticky;
+      top: 0;
+      z-index: 2;
     }
 
     .rg-kt-column-cell,
@@ -119,4 +125,13 @@
       }
     }
   }
+}
+
+/* Pagination container styles */
+.paginationContainer {
+  border-top: 1px solid var(--border-color);
+  background-color: light-dark(
+    var(--mantine-color-gray-0),
+    var(--mantine-color-dark-7)
+  );
 }

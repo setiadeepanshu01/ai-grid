@@ -1199,13 +1199,40 @@ export const useStore = create<Store>()(
     }),
     {
       name: "store",
-      version: 10, // Increment version due to schema change
-      partialize: (state) => ({
-        ...state,
-        activePopoverId: null, // Don't persist active popover state
-        documentPreviews: state.documentPreviews, // Persist document previews
-        auth: state.auth // Persist authentication state
-      })
+      version: 11, // Increment version due to schema change
+      partialize: (state) => {
+        // If authenticated, only persist minimal data to localStorage
+        if (state.auth.isAuthenticated) {
+          return {
+            // Keep table metadata but not the full data
+            tables: state.tables.map(table => ({
+              id: table.id,
+              name: table.name,
+              // Don't persist actual content for large tables
+              columns: [],
+              rows: [],
+              globalRules: [],
+              filters: [],
+              chunks: {},
+              openedChunks: [],
+              loadingCells: {},
+              uploadingFiles: false
+            })),
+            activeTableId: state.activeTableId,
+            activePopoverId: null,
+            colorScheme: state.colorScheme,
+            auth: state.auth
+          };
+        } else {
+          // If not authenticated, persist all data but exclude some runtime state
+          return {
+            ...state,
+            activePopoverId: null,
+            documentPreviews: state.documentPreviews,
+            auth: state.auth
+          };
+        }
+      }
     }
   )
 );
