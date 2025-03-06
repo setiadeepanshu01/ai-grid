@@ -679,7 +679,7 @@ export const useStore = create<Store>()(
         });
 
         // Prepare batch queries
-        const batchQueries = batch.map(({ row, column: column_ }) => {
+        const batchQueries = batch.map(({ row, column: column_, key }) => {
           const column = cloneDeep(column_);
           let shouldRunQuery = true;
           let hasMatches = false;
@@ -707,7 +707,8 @@ export const useStore = create<Store>()(
             row, 
             column, 
             shouldRunQuery,
-            globalRules 
+            globalRules,
+            key
           };
         });
 
@@ -728,115 +729,186 @@ export const useStore = create<Store>()(
         // If no queries to run, return early
         if (queriesToRun.length === 0) return;
         
-        // Run batch queries in parallel
-        runBatchQueries(queriesToRun)
-          .then((responses: any[]) => {
-            // Process each response
-            responses.forEach((response: any, i: number) => {
-              const { row, column } = queriesToRun[i];
-              const key = getCellKey(row.id, column.id);
-              const { answer, chunks, resolvedEntities } = response;
-              
-              // Update cell value
-              editCells(
-                [{ rowId: row.id, columnId: column.id, cell: answer.answer }],
-                activeTableId
-              );
-              
-              // Get current state
-              const currentTable = getTable(activeTableId);
-              
-              // Define a type for the entity parameter
-              type EntityLike = { 
-                original: string | string[]; 
-                resolved: string | string[]; 
-                source?: { type: string; id: string }; 
-                entityType?: string 
-              };
-              
-              // Helper to check if an entity matches any global rule patterns
-              const isGlobalEntity = (entity: EntityLike) => {
-                const originalText = Array.isArray(entity.original) 
-                  ? entity.original.join(' ') 
-                  : entity.original;
-                  
-                return globalRules.some(rule => 
-                  rule.type === 'resolve_entity' && 
-                  rule.options?.some(pattern => 
-                    originalText.toLowerCase().includes(pattern.toLowerCase())
-                  )
-                );
-              };
-              
-              // Update table state with chunks and resolved entities
-              editTable(activeTableId, {
-                chunks: { ...currentTable.chunks, [key]: chunks },
-                loadingCells: omit(currentTable.loadingCells, key),
-                columns: currentTable.columns.map(col => ({
-                  ...col,
-                  resolvedEntities: col.id === column.id 
-                    ? [
-                        ...(col.resolvedEntities || []),
-                        ...(resolvedEntities || [])
-                          .filter((entity: EntityLike) => !isGlobalEntity(entity))
-                          .map((entity: EntityLike) => ({
-                            ...entity,
-                            entityType: column.entityType,
-                            source: {
-                              type: 'column' as const,
-                              id: column.id
-                            }
-                          })) as ResolvedEntity[]
-                      ]
-                    : (col.resolvedEntities || [])
-                })),
-                globalRules: currentTable.globalRules.map(rule => ({
-                  ...rule,
-                  resolvedEntities: rule.type === 'resolve_entity'
-                    ? [
-                        ...(rule.resolvedEntities || []),
-                        ...(resolvedEntities || [])
-                          .filter((entity: EntityLike) => isGlobalEntity(entity))
-                          .map((entity: EntityLike) => ({
-                            ...entity,
-                            entityType: 'global',
-                            source: {
-                              type: 'global' as const,
-                              id: rule.id
-                            }
-                          })) as ResolvedEntity[]
-                      ]
-                    : (rule.resolvedEntities || [])
-                }))
-              });
-            });
-          })
-          .catch((error: any) => {
-            console.error('Error running batch queries:', error);
+        // Helper to check if an entity matches any global rule patterns
+        const isGlobalEntity = (entity: { original: string | string[] }) => {
+          const originalText = Array.isArray(entity.original) 
+            ? entity.original.join(' ') 
+            : entity.original;
             
-            // Clear loading state for all cells in the batch
-            editTable(activeTableId, {
-              loadingCells: omit(
-                getTable(activeTableId).loadingCells, 
-                queriesToRun.map(({ row, column }) => getCellKey(row.id, column.id))
-              )
+          return globalRules.some(rule => 
+            rule.type === 'resolve_entity' && 
+            rule.options?.some(pattern => 
+              originalText.toLowerCase().includes(pattern.toLowerCase())
+            )
+          );
+        };
+        
+        // Define a type for the entity parameter
+        type EntityLike = { 
+          original: string | string[]; 
+          resolved: string | string[]; 
+          source?: { type: string; id: string }; 
+          entityType?: string 
+        };
+        
+        // Process each response as it comes in
+        const processQueryResult = (response: any, queryInfo: typeof queriesToRun[0]) => {
+          const { row, column, key } = queryInfo;
+          const { answer, chunks, resolvedEntities } = response;
+          
+          // Update cell value
+          editCells(
+            [{ rowId: row.id, columnId: column.id, cell: answer.answer }],
+            activeTableId
+          );
+          
+          // Get current state
+          const currentTable = getTable(activeTableId);
+          
+          // Update table state with chunks and resolved entities
+          editTable(activeTableId, {
+            chunks: { ...currentTable.chunks, [key]: chunks },
+            loadingCells: omit(currentTable.loadingCells, key),
+            columns: currentTable.columns.map(col => ({
+              ...col,
+              resolvedEntities: col.id === column.id 
+                ? [
+                    ...(col.resolvedEntities || []),
+                    ...(resolvedEntities || [])
+                      .filter((entity: EntityLike) => !isGlobalEntity(entity))
+                      .map((entity: EntityLike) => ({
+                        ...entity,
+                        entityType: column.entityType,
+                        source: {
+                          type: 'column' as const,
+                          id: column.id
+                        }
+                      })) as ResolvedEntity[]
+                  ]
+                : (col.resolvedEntities || [])
+            })),
+            globalRules: currentTable.globalRules.map(rule => ({
+              ...rule,
+              resolvedEntities: rule.type === 'resolve_entity'
+                ? [
+                    ...(rule.resolvedEntities || []),
+                    ...(resolvedEntities || [])
+                      .filter((entity: EntityLike) => isGlobalEntity(entity))
+                      .map((entity: EntityLike) => ({
+                        ...entity,
+                        entityType: 'global',
+                        source: {
+                          type: 'global' as const,
+                          id: rule.id
+                        }
+                      })) as ResolvedEntity[]
+                  ]
+                : (rule.resolvedEntities || [])
+            }))
+          });
+        };
+        
+        // Handle errors for a specific query
+        const handleQueryError = (error: any, queryInfo: typeof queriesToRun[0]) => {
+          console.error(`Error running query for ${queryInfo.row.id}-${queryInfo.column.id}:`, error);
+          
+          // Clear loading state for this cell
+          editTable(activeTableId, {
+            loadingCells: omit(getTable(activeTableId).loadingCells, queryInfo.key)
+          });
+          
+          // Show error notification
+          if (error instanceof ApiError) {
+            notifications.show({
+              title: 'Query failed',
+              message: error.message,
+              color: 'red'
             });
-            
-            // Show error notification
-            if (error instanceof ApiError) {
-              notifications.show({
-                title: 'Batch query failed',
-                message: error.message,
-                color: 'red'
-              });
-            } else {
-              notifications.show({
-                title: 'Batch query failed',
-                message: error instanceof Error ? error.message : 'Unknown error',
-                color: 'red'
+          } else {
+            notifications.show({
+              title: 'Query failed',
+              message: error instanceof Error ? error.message : 'Unknown error',
+              color: 'red'
+            });
+          }
+        };
+        // Show a notification for very large batches
+
+        if (queriesToRun.length > 50) {
+
+          notifications.show({
+
+            title: 'Processing requests',
+
+            message: `Processing ${queriesToRun.length} cells in parallel.`,
+
+            color: 'blue',
+
+            autoClose: 3000
+
+          });
+
+        }
+        // Determine batch size based on number of queries
+        const useBatchSize = queriesToRun.length > 50 ? 15 : 
+                            queriesToRun.length > 20 ? 5 : 
+                            queriesToRun.length > 10 ? 3 : 0;
+        
+        // Use individual processing for small batches or batch processing for larger ones
+        const useIndividualProcessing = queriesToRun.length <= 5;
+        
+        // Run batch queries with progressive updates
+        runBatchQueries(
+          queriesToRun,
+          {
+            batchSize: useBatchSize,
+            processIndividually: useIndividualProcessing,
+            onQueryProgress: (result, index) => {
+              if (result && !result.error && index < queriesToRun.length) {
+                processQueryResult(result, queriesToRun[index]);
+              } else if (result.error && index < queriesToRun.length) {
+                handleQueryError(result.error, queriesToRun[index]);
+              }
+            },
+            onBatchProgress: (results, batchIndex, totalBatches) => {
+              console.log(`Processed batch ${batchIndex + 1}/${totalBatches}`);
+              
+              // Process each result in the batch
+              const batchStart = batchIndex * useBatchSize;
+              results.forEach((result, resultIndex) => {
+                const queryIndex = batchStart + resultIndex;
+                if (queryIndex < queriesToRun.length) {
+                  processQueryResult(result, queriesToRun[queryIndex]);
+                }
               });
             }
-          });
+          }
+        ).catch((error: any) => {
+          console.error('Error running batch queries:', error);
+          
+          // Clear loading state for all remaining cells in the batch that haven't been processed
+          const remainingLoadingCells = getTable(activeTableId).loadingCells;
+          if (Object.keys(remainingLoadingCells).length > 0) {
+            editTable(activeTableId, {
+              loadingCells: {}
+            });
+          }
+          
+          // Show error notification
+          if (error instanceof ApiError) {
+            notifications.show({
+              title: 'Batch query failed',
+              message: error.message,
+              color: 'red'
+            });
+          } else {
+            notifications.show({
+              title: 'Batch query failed',
+              message: error instanceof Error ? error.message : 'Unknown error',
+              color: 'red'
+            });
+          }
+        });
       },
 
       clearCells: cells => {

@@ -2,10 +2,8 @@
  * API configuration for the frontend
  */
 import { z } from 'zod';
-
 // Get the API URL from environment variables or use a default
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
 // API error class
 export class ApiError extends Error {
   status: number;
@@ -16,7 +14,6 @@ export class ApiError extends Error {
     this.status = status;
   }
 }
-
 // API schemas
 export const chunkSchema = z.object({
   id: z.string(),
@@ -25,7 +22,6 @@ export const chunkSchema = z.object({
   page: z.number(),
   metadata: z.record(z.any()).optional(),
 });
-
 export const documentSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -34,7 +30,6 @@ export const documentSchema = z.object({
   tag: z.string().optional(),
   chunks: z.array(chunkSchema).optional(),
 });
-
 export const answerSchema = z.union([
   z.string(),
   z.number(),
@@ -47,7 +42,6 @@ export const answerSchema = z.union([
     resolvedEntities: z.array(z.any()).optional(),
   })
 ]);
-
 // API functions
 export const uploadFile = async (file: File): Promise<any> => {
   const formData = new FormData();
@@ -74,7 +68,6 @@ export const uploadFile = async (file: File): Promise<any> => {
     throw error;
   }
 };
-
 export const uploadFiles = async (files: File[]): Promise<any> => {
   const formData = new FormData();
   
@@ -104,7 +97,6 @@ export const uploadFiles = async (files: File[]): Promise<any> => {
     throw error;
   }
 };
-
 export const runQuery = async (row: any, column: any, globalRules: any = []): Promise<any> => {
   // Get document ID from the row's sourceData
   const documentId = row?.sourceData?.document?.id || "00000000000000000000000000000000";
@@ -145,7 +137,6 @@ export const runQuery = async (row: any, column: any, globalRules: any = []): Pr
     throw error;
   }
 };
-
 /**
  * Run multiple queries in parallel using the batch endpoint
  * @param queries Array of query objects, each containing row, column, and globalRules
@@ -184,10 +175,30 @@ export const fetchDocumentPreview = async (documentId: string): Promise<string> 
     throw error;
   }
 };
-
+/**
+ * Runs batch queries with improved handling for large batches.
+ * This implementation supports both single batch mode and individual processing.
+ * 
+ * @param queries Array of query objects, each containing row, column, and globalRules
+ * @param options Configuration options for batch processing
+ * @returns Promise resolving to an array of query results in the same order as input
+ */
 export const runBatchQueries = async (
-  queries: Array<{ row: any; column: any; globalRules?: any[] }>
+  queries: Array<{ row: any; column: any; globalRules?: any[]; }>,
+  options: {
+    batchSize?: number;
+    processIndividually?: boolean;
+    onBatchProgress?: (results: any[], batchIndex: number, totalBatches: number) => void;
+    onQueryProgress?: (result: any, index: number, total: number) => void;
+  } = {}
 ): Promise<any[]> => {
+  const {
+    batchSize = 10,
+    processIndividually = false,
+    onBatchProgress,
+    onQueryProgress
+  } = options;
+  
   // Format the queries for the batch endpoint
   const formattedQueries = queries.map(({ row, column, globalRules = [] }) => {
     const documentId = row?.sourceData?.document?.id || "00000000000000000000000000000000";
@@ -202,32 +213,108 @@ export const runBatchQueries = async (
         query: column?.query || "",
         type: column?.type || "str",
         rules: rules
-      }
+      },
+      // Store original query info for callbacks
+      _originalQuery: { row, column, index: 0 } 
     };
   });
+  // Update the index information
+  formattedQueries.forEach((query, index) => {
+    query._originalQuery.index = index;
+  });
   
-  console.log(`Running batch query with ${formattedQueries.length} queries to:`, API_ENDPOINTS.BATCH_QUERY);
-  
-  try {
-    const response = await fetch(API_ENDPOINTS.BATCH_QUERY, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      mode: 'cors',
-      credentials: 'include',
-      body: JSON.stringify(formattedQueries),
+  // If processing individually, run each query separately and collect results
+  if (processIndividually) {
+    const results: any[] = new Array(formattedQueries.length);
+    const promises = formattedQueries.map(async (query, index) => {
+      try {
+        const response = await fetch(API_ENDPOINTS.QUERY, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          mode: 'cors',
+          credentials: 'include',
+          body: JSON.stringify({
+            document_id: query.document_id,
+            prompt: query.prompt
+          }),
+        });
+        
+        if (!response.ok) {
+          throw new ApiError(`Query failed: ${response.statusText}`, response.status);
+        }
+        
+        const result = await response.json();
+        results[index] = result;
+        
+        // Call progress callback if provided
+        if (onQueryProgress) {
+          onQueryProgress(result, index, formattedQueries.length);
+        }
+        
+        return result;
+      } catch (error) {
+        console.error(`Error running individual query ${index}:`, error);
+        if (onQueryProgress) {
+          onQueryProgress({ error }, index, formattedQueries.length);
+        }
+        throw error;
+      }
     });
     
-    if (!response.ok) {
-      throw new ApiError(`Batch query failed: ${response.statusText}`, response.status);
-    }
-    
-    return response.json();
-  } catch (error) {
-    console.error('Error running batch query:', error);
-    throw error;
+    await Promise.allSettled(promises);
+    return results;
   }
+  
+  // Process in batches
+  const batches = [];
+  for (let i = 0; i < formattedQueries.length; i += batchSize) {
+    batches.push(formattedQueries.slice(i, i + batchSize));
+  }
+  
+  console.log(`Running ${batches.length} batch queries with ${formattedQueries.length} total queries`);
+  
+  const results: any[] = new Array(formattedQueries.length);
+  
+  // Process each batch
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex];
+    
+    try {
+      console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} queries`);
+      
+      const response = await fetch(API_ENDPOINTS.BATCH_QUERY, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        mode: 'cors',
+        credentials: 'include',
+        body: JSON.stringify(batch.map(q => ({ document_id: q.document_id, prompt: q.prompt }))),
+      });
+      
+      if (!response.ok) {
+        throw new ApiError(`Batch query failed: ${response.statusText}`, response.status);
+      }
+      
+      const batchResults = await response.json();
+      
+      // Map batch results to the correct positions in the final results array
+      batchResults.forEach((result: any, resultIndex: number) => {
+        const originalIndex = batch[resultIndex]._originalQuery.index;
+        results[originalIndex] = result;
+      });
+      
+      // Call batch progress callback if provided
+      if (onBatchProgress) {
+        onBatchProgress(batchResults, batchIndex, batches.length);
+      }
+      
+    } catch (error) {
+      console.error(`Error running batch ${batchIndex + 1}:`, error);
+      throw error;
+    }
+  }
+  
+  return results;
 };
-
 // API endpoints
 export const API_ENDPOINTS = {
   // Base API URL
@@ -254,9 +341,7 @@ export const API_ENDPOINTS = {
   // Health check
   HEALTH: `${API_URL}/ping`,
 };
-
 import { useStore } from './store';
-
 // Function to get headers with authentication token
 export const getAuthHeaders = () => {
   const token = useStore.getState().auth.token;
@@ -266,12 +351,10 @@ export const getAuthHeaders = () => {
     ...(token ? { 'Authorization': `Bearer ${token}` } : {})
   };
 };
-
 // Default request headers
 export const DEFAULT_HEADERS = {
   'Content-Type': 'application/json',
 };
-
 // Function to get upload headers with authentication token
 export const getUploadHeaders = () => {
   const token = useStore.getState().auth.token;
@@ -282,12 +365,10 @@ export const getUploadHeaders = () => {
     ...(token ? { 'Authorization': `Bearer ${token}` } : {})
   };
 };
-
 // File upload headers
 export const UPLOAD_HEADERS = {
   'Accept': 'application/json',
   'Origin': 'https://ai-grid.onrender.com',
 };
-
 // Request timeout in milliseconds
 export const REQUEST_TIMEOUT = 30000;
