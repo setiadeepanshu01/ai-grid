@@ -72,7 +72,9 @@ export const KtDownload = {
         }
       });
 
-      download("ai-grid-data.csv", {
+      // Use the table name for the filename, or fall back to "ai-grid-data" if no name
+      const tableName = data.name ? data.name.replace(/[^a-z0-9]/gi, '-').toLowerCase() : "ai-grid-data";
+      download(`${tableName}.csv`, {
         mimeType: "text/csv",
         content: csvData
       });
