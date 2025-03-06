@@ -5,7 +5,7 @@ import { z } from 'zod';
 // Get the API URL from environment variables or use a default
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 // Log the API URL for debugging
-console.log('API URL:', API_URL);
+// console.log('API URL:', API_URL);
 // API error class
 export class ApiError extends Error {
   status: number;
@@ -185,6 +185,39 @@ export const fetchDocumentPreview = async (documentId: string): Promise<string> 
  * @param options Configuration options for batch processing
  * @returns Promise resolving to an array of query results in the same order as input
  */
+/**
+ * Helper function to retry a fetch request with exponential backoff
+ * @param fetchFn Function that performs the fetch operation
+ * @param retries Number of retries
+ * @param delay Initial delay in ms
+ * @returns Promise with the fetch result
+ */
+const retryFetch = async (
+  fetchFn: () => Promise<Response>,
+  retries = 3,
+  delay = 1000
+): Promise<Response> => {
+  try {
+    return await fetchFn();
+  } catch (error) {
+    // Check if we should retry
+    if (retries <= 0) throw error;
+    
+    // If it's a network error or 502 Bad Gateway, retry
+    const shouldRetry = 
+      error instanceof TypeError || // Network error
+      (error instanceof ApiError && error.status === 502); // Bad Gateway
+    
+    if (!shouldRetry) throw error;
+    
+    // Wait before retrying
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
+    // Retry with exponential backoff
+    return retryFetch(fetchFn, retries - 1, delay * 2);
+  }
+};
+
 export const runBatchQueries = async (
   queries: Array<{ row: any; column: any; globalRules?: any[]; }>,
   options: {
@@ -230,7 +263,8 @@ export const runBatchQueries = async (
     const results: any[] = new Array(formattedQueries.length);
     const promises = formattedQueries.map(async (query, index) => {
       try {
-        const response = await fetch(API_ENDPOINTS.QUERY, {
+      const response = await retryFetch(
+        () => fetch(API_ENDPOINTS.QUERY, {
           method: 'POST',
           headers: getAuthHeaders(),
           mode: 'cors',
@@ -239,7 +273,10 @@ export const runBatchQueries = async (
             document_id: query.document_id,
             prompt: query.prompt
           }),
-        });
+        }),
+        2, // 2 retries
+        1000 // 1 second initial delay
+      );
         
         if (!response.ok) {
           throw new ApiError(`Query failed: ${response.statusText}`, response.status);
@@ -284,13 +321,17 @@ export const runBatchQueries = async (
     try {
       console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} queries`);
       
-      const response = await fetch(API_ENDPOINTS.BATCH_QUERY, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        mode: 'cors',
-        credentials: 'include',
-        body: JSON.stringify(batch.map(q => ({ document_id: q.document_id, prompt: q.prompt }))),
-      });
+      const response = await retryFetch(
+        () => fetch(API_ENDPOINTS.BATCH_QUERY, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          mode: 'cors',
+          credentials: 'include',
+          body: JSON.stringify(batch.map(q => ({ document_id: q.document_id, prompt: q.prompt }))),
+        }),
+        2, // 2 retries
+        1000 // 1 second initial delay
+      );
       
       if (!response.ok) {
         throw new ApiError(`Batch query failed: ${response.statusText}`, response.status);

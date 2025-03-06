@@ -1,4 +1,4 @@
-import { API_ENDPOINTS, getAuthHeaders } from '../../config/api';
+import { API_ENDPOINTS, getAuthHeaders, ApiError } from '../../config/api';
 import { useStore } from '../../config/store';
 
 // Error class for table state API errors
@@ -24,6 +24,41 @@ export interface TableStateListResponse {
 }
 
 /**
+ * Helper function to retry a fetch request with exponential backoff
+ * @param fetchFn Function that performs the fetch operation
+ * @param retries Number of retries
+ * @param delay Initial delay in ms
+ * @returns Promise with the fetch result
+ */
+const retryFetch = async (
+  fetchFn: () => Promise<Response>,
+  retries = 3,
+  delay = 1000
+): Promise<Response> => {
+  try {
+    return await fetchFn();
+  } catch (error) {
+    // Check if we should retry
+    if (retries <= 0) throw error;
+    
+    // If it's a network error or 502 Bad Gateway, retry
+    const shouldRetry = 
+      error instanceof TypeError || // Network error
+      (error instanceof ApiError && error.status === 502); // Bad Gateway
+    
+    if (!shouldRetry) throw error;
+    
+    console.log(`Retrying fetch (${retries} retries left) after ${delay}ms...`);
+    
+    // Wait before retrying
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
+    // Retry with exponential backoff
+    return retryFetch(fetchFn, retries - 1, delay * 2);
+  }
+};
+
+/**
  * Save the current table state to the backend
  * @param tableId The ID of the table to save
  * @param tableName The name of the table
@@ -40,20 +75,24 @@ export async function saveTableState(tableId: string, tableName: string, tableDa
     
     // Log the API endpoint and headers for debugging
     const headers = getAuthHeaders();
-    console.log('Saving table state to:', `${API_ENDPOINTS.API_V1}/table-state/`);
-    console.log('With headers:', JSON.stringify(headers));
+    // console.log('Saving table state to:', `${API_ENDPOINTS.API_V1}/table-state/`);
+    // console.log('With headers:', JSON.stringify(headers));
     
-    const response = await fetch(`${API_ENDPOINTS.API_V1}/table-state/`, {
-      method: 'POST',
-      headers: headers,
-      mode: 'cors',
-      credentials: 'include',
-      body: JSON.stringify({
-        id: tableId,
-        name: tableName,
-        data: tableData
-      })
-    });
+    const response = await retryFetch(
+      () => fetch(`${API_ENDPOINTS.API_V1}/table-state/`, {
+        method: 'POST',
+        headers: headers,
+        mode: 'cors',
+        credentials: 'include',
+        body: JSON.stringify({
+          id: tableId,
+          name: tableName,
+          data: tableData
+        })
+      }),
+      2, // 2 retries
+      1000 // 1 second initial delay
+    );
     
     console.log('Save table state response:', response.status, response.statusText);
     
@@ -94,18 +133,22 @@ export async function updateTableState(tableId: string, tableData: any): Promise
     
     // Log the API endpoint and headers for debugging
     const headers = getAuthHeaders();
-    console.log('Updating table state at:', `${API_ENDPOINTS.API_V1}/table-state/${tableId}`);
-    console.log('With headers:', JSON.stringify(headers));
+    // console.log('Updating table state at:', `${API_ENDPOINTS.API_V1}/table-state/${tableId}`);
+    // console.log('With headers:', JSON.stringify(headers));
     
-    const response = await fetch(`${API_ENDPOINTS.API_V1}/table-state/${tableId}`, {
-      method: 'PUT',
-      headers: headers,
-      mode: 'cors',
-      credentials: 'include',
-      body: JSON.stringify({
-        data: tableData
-      })
-    });
+    const response = await retryFetch(
+      () => fetch(`${API_ENDPOINTS.API_V1}/table-state/${tableId}`, {
+        method: 'PUT',
+        headers: headers,
+        mode: 'cors',
+        credentials: 'include',
+        body: JSON.stringify({
+          data: tableData
+        })
+      }),
+      2, // 2 retries
+      1000 // 1 second initial delay
+    );
     
     console.log('Update table state response:', response.status, response.statusText);
     
@@ -182,15 +225,19 @@ export async function listTableStates(): Promise<TableStateListResponse> {
     
     // Log the API endpoint and headers for debugging
     const headers = getAuthHeaders();
-    console.log('Listing table states from:', `${API_ENDPOINTS.API_V1}/table-state/`);
-    console.log('With headers:', JSON.stringify(headers));
+    // console.log('Listing table states from:', `${API_ENDPOINTS.API_V1}/table-state/`);
+    // console.log('With headers:', JSON.stringify(headers));
     
-    const response = await fetch(`${API_ENDPOINTS.API_V1}/table-state/`, {
-      method: 'GET',
-      headers: headers,
-      mode: 'cors',
-      credentials: 'include'
-    });
+    const response = await retryFetch(
+      () => fetch(`${API_ENDPOINTS.API_V1}/table-state/`, {
+        method: 'GET',
+        headers: headers,
+        mode: 'cors',
+        credentials: 'include'
+      }),
+      2, // 2 retries
+      1000 // 1 second initial delay
+    );
     
     console.log('List table states response:', response.status, response.statusText);
     

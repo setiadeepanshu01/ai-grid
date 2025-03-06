@@ -605,6 +605,19 @@ export const useStore = create<Store>()(
         const colMap = keyBy(columns, c => c.id);
         const rowMap = keyBy(rows, r => r.id);
       
+        // Check if there's already a batch query in progress
+        const requestProgress = currentTable.requestProgress;
+        if (requestProgress && requestProgress.inProgress) {
+          // Show a notification that a query is already in progress
+          notifications.show({
+            title: 'Processing in progress',
+            message: 'Please wait for the current operation to complete before starting a new one.',
+            color: 'blue',
+            autoClose: 3000
+          });
+          return; // Exit early
+        }
+      
         // Get the set of column IDs being rerun
         const rerunColumnIds = new Set(cells.map(cell => cell.columnId));
         
@@ -817,20 +830,8 @@ export const useStore = create<Store>()(
             loadingCells: omit(getTable(activeTableId).loadingCells, queryInfo.key)
           });
           
-          // Show error notification
-          if (error instanceof ApiError) {
-            notifications.show({
-              title: 'Query failed',
-              message: error.message,
-              color: 'red'
-            });
-          } else {
-            notifications.show({
-              title: 'Query failed',
-              message: error instanceof Error ? error.message : 'Unknown error',
-              color: 'red'
-            });
-          }
+          // Just log the error to console, don't show notifications to user
+          console.error('Query failed:', error instanceof Error ? error.message : 'Unknown error');
         };
         try {
           // Get current progress state for tracking
@@ -974,20 +975,8 @@ export const useStore = create<Store>()(
             // Continue even if progress tracking fails
           }
           
-          // Show error notification
-          if (error instanceof ApiError) {
-            notifications.show({
-              title: 'Batch query failed',
-              message: error.message,
-              color: 'red'
-            });
-          } else {
-            notifications.show({
-              title: 'Batch query failed',
-              message: error instanceof Error ? error.message : 'Unknown error',
-              color: 'red'
-            });
-          }
+          // Just log the error to console, don't show notifications to user
+          console.error('Batch query failed:', error instanceof Error ? error.message : 'Unknown error');
         });
       },
 
