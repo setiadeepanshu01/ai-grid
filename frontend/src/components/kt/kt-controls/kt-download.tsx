@@ -20,10 +20,20 @@ export const KtDownload = {
       
       // Use better column names - use entityType or fall back to id
       const columnNames = validColumns.map(col => col.entityType || col.id || "Column");
+      
+      // Check if any row has a valid document name
+      const hasDocumentData = data.rows.some(row => 
+        row.sourceData?.type === "document" || 
+        row.sourceData?.type === "loading" || 
+        row.sourceData?.type === "error"
+      );
+      
+      // Only include Document column if there's actual document data
+      let csvData = hasDocumentData 
+        ? `Document,${columnNames.join(",")}\n` 
+        : `${columnNames.join(",")}\n`;
 
-      let csvData = `Document,${columnNames.join(",")}\n`;
-
-      // Process rows and filter out those with unknown document names
+      // Process all rows
       const processedRows = data.rows.map(row => {
         // Handle different source data types
         let documentName = "";
@@ -33,11 +43,6 @@ export const KtDownload = {
           documentName = `Loading: ${row.sourceData.name}`;
         } else if (row.sourceData?.type === "error") {
           documentName = `Error: ${row.sourceData.name}`;
-        }
-
-        // Skip rows with empty document names
-        if (!documentName) {
-          return null;
         }
 
         const cellValues = validColumns.map(col => {
@@ -56,12 +61,14 @@ export const KtDownload = {
           documentName,
           cellValues
         };
-      }).filter(Boolean); // Remove null entries
+      });
 
       // Add rows to CSV data
       processedRows.forEach(row => {
-        if (row) {
+        if (hasDocumentData) {
           csvData += `"${row.documentName}",${row.cellValues.join(",")}\n`;
+        } else {
+          csvData += `${row.cellValues.join(",")}\n`;
         }
       });
 
