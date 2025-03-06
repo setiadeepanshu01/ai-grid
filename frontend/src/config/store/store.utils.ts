@@ -62,7 +62,12 @@ export function getBlankTable(name?: string): AnswerTable {
     chunks: {},
     openedChunks: [],
     loadingCells: {},
-    uploadingFiles: false
+    uploadingFiles: false,
+    requestProgress: {
+      total: 0,
+      completed: 0,
+      inProgress: false
+    }
   };
 }
 

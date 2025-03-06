@@ -91,6 +91,13 @@ export interface ResolvedEntity {
   };
 }
 
+export interface RequestProgress {
+  total: number;
+  completed: number;
+  inProgress: boolean;
+  error?: boolean;
+}
+
 export interface AnswerTable {
   id: string;
   name: string;
@@ -102,6 +109,7 @@ export interface AnswerTable {
   openedChunks: CellKey[];
   loadingCells: Record<CellKey, true>;
   uploadingFiles: boolean;
+  requestProgress?: RequestProgress;
 }
 
 export interface AnswerTableColumn {

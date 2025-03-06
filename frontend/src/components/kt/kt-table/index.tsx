@@ -15,6 +15,7 @@ import {
   KtColumnCellTemplate,
   KtRowCellTemplate
 } from "./kt-cells";
+import { KtProgressBar } from "../kt-progress-bar";
 import { useStore } from "@config/store";
 import { cn } from "@utils/functions";
 import classes from "./index.module.css";
@@ -113,6 +114,7 @@ export function KtTable(props: BoxProps) {
 
   return (
     <Stack gap="sm" pb={0} {...props}>
+      <KtProgressBar />
       <ScrollArea
         style={{ flex: 1 }}
         className={cn(classes.reactGridWrapper, props.className)}

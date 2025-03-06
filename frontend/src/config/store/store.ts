@@ -832,22 +832,35 @@ export const useStore = create<Store>()(
             });
           }
         };
-        // Show a notification for very large batches
-
-        if (queriesToRun.length > 50) {
-
-          notifications.show({
-
-            title: 'Processing requests',
-
-            message: `Processing ${queriesToRun.length} cells in parallel.`,
-
-            color: 'blue',
-
-            autoClose: 3000
-
+        try {
+          // Get current progress state for tracking
+          const tableWithProgress = getTable(activeTableId);
+          const existingProgress = tableWithProgress.requestProgress || { total: 0, completed: 0, inProgress: false };
+          
+          // If there's already a progress in progress, add to it, otherwise create new
+          editTable(activeTableId, {
+            requestProgress: {
+              total: existingProgress.inProgress 
+                ? existingProgress.total + queriesToRun.length 
+                : queriesToRun.length,
+              completed: existingProgress.inProgress ? existingProgress.completed : 0,
+              inProgress: true,
+              error: false // Reset error state when starting new requests
+            }
           });
+        } catch (error) {
+          console.error('Error updating progress state:', error);
+          // Continue with the operation even if progress tracking fails
+        }
 
+        // Show a notification for very large batches
+        if (queriesToRun.length > 50) {
+          notifications.show({
+            title: 'Processing requests',
+            message: `Processing ${queriesToRun.length} cells in parallel.`,
+            color: 'blue',
+            autoClose: 3000
+          });
         }
         // Determine batch size based on number of queries
         const useBatchSize = queriesToRun.length > 50 ? 15 : 
@@ -866,8 +879,26 @@ export const useStore = create<Store>()(
             onQueryProgress: (result, index) => {
               if (result && !result.error && index < queriesToRun.length) {
                 processQueryResult(result, queriesToRun[index]);
+                // Update progress counter
+                const currentTable = getTable(activeTableId);
+                const currentProgress = currentTable.requestProgress || { total: queriesToRun.length, completed: 0, inProgress: true };
+                editTable(activeTableId, {
+                  requestProgress: {
+                    ...currentProgress,
+                    completed: currentProgress.completed + 1
+                  }
+                });
               } else if (result.error && index < queriesToRun.length) {
                 handleQueryError(result.error, queriesToRun[index]);
+                // Update progress counter even for errors
+                const currentTable = getTable(activeTableId);
+                const currentProgress = currentTable.requestProgress || { total: queriesToRun.length, completed: 0, inProgress: true };
+                editTable(activeTableId, {
+                  requestProgress: {
+                    ...currentProgress,
+                    completed: currentProgress.completed + 1
+                  }
+                });
               }
             },
             onBatchProgress: (results, batchIndex, totalBatches) => {
@@ -881,9 +912,43 @@ export const useStore = create<Store>()(
                   processQueryResult(result, queriesToRun[queryIndex]);
                 }
               });
+              
+              // Update progress counter for the batch
+              const currentTable = getTable(activeTableId);
+              const currentProgress = currentTable.requestProgress || { total: queriesToRun.length, completed: 0, inProgress: true };
+              const completedCount = Math.min(
+                currentProgress.completed + results.length,
+                currentProgress.total
+              );
+              
+              editTable(activeTableId, {
+                requestProgress: {
+                  ...currentProgress,
+                  completed: completedCount
+                }
+              });
             }
           }
-        ).catch((error: any) => {
+        ).then(() => {
+          try {
+            // Mark progress as complete when all requests are done
+            const currentTable = getTable(activeTableId);
+            const currentProgress = currentTable.requestProgress || { total: 0, completed: 0, inProgress: false };
+            
+            editTable(activeTableId, {
+              requestProgress: {
+                total: currentProgress.total,
+                completed: currentProgress.completed,
+                inProgress: false
+              }
+            });
+          } catch (error) {
+            console.error('Error updating progress state on completion:', error);
+            // Continue even if progress tracking fails
+          }
+          
+          // Notification is now handled by the KtProgressBar component
+        }).catch((error: any) => {
           console.error('Error running batch queries:', error);
           
           // Clear loading state for all remaining cells in the batch that haven't been processed
@@ -892,6 +957,21 @@ export const useStore = create<Store>()(
             editTable(activeTableId, {
               loadingCells: {}
             });
+          }
+          
+          try {
+            // Mark progress as complete but with error - simple version
+            editTable(activeTableId, {
+              requestProgress: {
+                total: queriesToRun.length,
+                completed: 0,
+                inProgress: false,
+                error: true
+              }
+            });
+          } catch (error) {
+            console.error('Error updating progress state on error:', error);
+            // Continue even if progress tracking fails
           }
           
           // Show error notification
