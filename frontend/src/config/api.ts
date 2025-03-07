@@ -358,27 +358,43 @@ export const runBatchQueries = async (
         throw new ApiError(`Batch query failed: ${response.statusText}`, response.status);
       }
       
-      const batchResults = await response.json();
+      let batchResults;
+      try {
+        batchResults = await response.json();
+      } catch (error) {
+        console.error('Error parsing batch response JSON:', error);
+        throw new ApiError('Invalid JSON in batch response', response.status);
+      }
       
       // Validate that batchResults is an array
       if (!Array.isArray(batchResults)) {
         console.error('Batch results is not an array:', batchResults);
-        throw new ApiError('Invalid batch response format', response.status);
+        // Instead of throwing, create an empty array to avoid breaking the process
+        batchResults = [];
+      }
+      
+      // Ensure batchResults doesn't exceed batch length
+      if (batchResults.length > batch.length) {
+        console.warn(`Batch results length (${batchResults.length}) exceeds batch length (${batch.length}), truncating`);
+        batchResults = batchResults.slice(0, batch.length);
       }
       
       // Map batch results to the correct positions in the final results array
-      for (let resultIndex = 0; resultIndex < batchResults.length; resultIndex++) {
-        // Make sure we have a valid batch entry at this index
-        if (resultIndex < batch.length) {
+      // Handle the case where batchResults.length might not match batch.length
+      const validResultsLength = Math.min(batchResults.length, batch.length);
+      
+      for (let resultIndex = 0; resultIndex < validResultsLength; resultIndex++) {
+        try {
           const originalIndex = batch[resultIndex]._originalQuery.index;
+          
           // Make sure the original index is within bounds
           if (originalIndex >= 0 && originalIndex < results.length) {
             results[originalIndex] = batchResults[resultIndex];
           } else {
             console.error(`Invalid original index: ${originalIndex} for batch result ${resultIndex}`);
           }
-        } else {
-          console.error(`Batch result index ${resultIndex} exceeds batch length ${batch.length}`);
+        } catch (error) {
+          console.error(`Error mapping batch result at index ${resultIndex}:`, error);
         }
       }
       

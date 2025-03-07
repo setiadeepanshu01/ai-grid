@@ -225,41 +225,103 @@ async def run_batch_queries(
             })
         
         # Execute all queries in parallel
-        results = []
+        inference_results = []
+        vector_results = []
         
         if inference_tasks:
             inference_results = await asyncio.gather(*inference_tasks)
-            results.extend(inference_results)
         
         if vector_query_params:
             vector_results = await process_queries_in_parallel(
                 vector_query_params, llm_service, vector_db_service
             )
-            results.extend(vector_results)
         
-        # Convert results to response format
-        responses = []
-        for i, result in enumerate(results):
-            req = inference_requests[i] if i < len(inference_requests) else vector_requests[i - len(inference_requests)]
-            
-            if not isinstance(result, QueryResult):
-                result = QueryResult(**result)
-            
-            answer = QueryAnswer(
-                id=uuid.uuid4().hex,
-                document_id=req.document_id,
-                prompt_id=req.prompt.id,
-                answer=result.answer,
-                type=req.prompt.type,
-            )
-            
-            response = QueryAnswerResponse(
-                answer=answer,
-                chunks=result.chunks,
-                resolved_entities=result.resolved_entities,
-            )
-            
-            responses.append(response)
+        # Create a mapping to track the original order of requests
+        request_map = {}
+        for i, req in enumerate(requests):
+            request_id = f"{req.document_id}:{req.prompt.id}"
+            request_map[request_id] = {
+                "index": i,
+                "request": req
+            }
+        
+        # Initialize responses array with the same length as requests
+        responses = [None] * len(requests)
+        
+        # Process inference results
+        for i, result in enumerate(inference_results):
+            if i < len(inference_requests):  # Safety check
+                req = inference_requests[i]
+                request_id = f"{req.document_id}:{req.prompt.id}"
+                
+                if request_id in request_map:  # Safety check
+                    original_index = request_map[request_id]["index"]
+                    
+                    if not isinstance(result, QueryResult):
+                        result = QueryResult(**result)
+                    
+                    answer = QueryAnswer(
+                        id=uuid.uuid4().hex,
+                        document_id=req.document_id,
+                        prompt_id=req.prompt.id,
+                        answer=result.answer,
+                        type=req.prompt.type,
+                    )
+                    
+                    response = QueryAnswerResponse(
+                        answer=answer,
+                        chunks=result.chunks or [],
+                        resolved_entities=result.resolved_entities or [],
+                    )
+                    
+                    if 0 <= original_index < len(responses):  # Safety check
+                        responses[original_index] = response
+        
+        # Process vector results
+        for i, result in enumerate(vector_results):
+            if i < len(vector_requests):  # Safety check
+                req = vector_requests[i]
+                request_id = f"{req.document_id}:{req.prompt.id}"
+                
+                if request_id in request_map:  # Safety check
+                    original_index = request_map[request_id]["index"]
+                    
+                    if not isinstance(result, QueryResult):
+                        result = QueryResult(**result)
+                    
+                    answer = QueryAnswer(
+                        id=uuid.uuid4().hex,
+                        document_id=req.document_id,
+                        prompt_id=req.prompt.id,
+                        answer=result.answer,
+                        type=req.prompt.type,
+                    )
+                    
+                    response = QueryAnswerResponse(
+                        answer=answer,
+                        chunks=result.chunks or [],
+                        resolved_entities=result.resolved_entities or [],
+                    )
+                    
+                    if 0 <= original_index < len(responses):  # Safety check
+                        responses[original_index] = response
+        
+        # Ensure all responses are filled
+        for i, response in enumerate(responses):
+            if response is None:
+                logger.warning(f"Missing response for request at index {i}, creating empty response")
+                req = requests[i]
+                responses[i] = QueryAnswerResponse(
+                    answer=QueryAnswer(
+                        id=uuid.uuid4().hex,
+                        document_id=req.document_id,
+                        prompt_id=req.prompt.id,
+                        answer={"answer": "Error: No response generated"},
+                        type=req.prompt.type,
+                    ),
+                    chunks=[],
+                    resolved_entities=[],
+                )
         
         return responses
         

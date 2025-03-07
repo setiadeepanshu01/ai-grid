@@ -766,8 +766,18 @@ export const useStore = create<Store>()(
         
         // Process each response as it comes in
         const processQueryResult = (response: any, queryInfo: typeof queriesToRun[0]) => {
+          if (!response) {
+            console.error('Received null or undefined response for query:', queryInfo);
+            return;
+          }
+          
           const { row, column, key } = queryInfo;
           const { answer, chunks, resolvedEntities } = response;
+          
+          if (!answer) {
+            console.error('Response missing answer property:', response);
+            return;
+          }
           
           // Update cell value
           editCells(
@@ -780,15 +790,15 @@ export const useStore = create<Store>()(
           
           // Update table state with chunks and resolved entities
           editTable(activeTableId, {
-            chunks: { ...currentTable.chunks, [key]: chunks },
+            chunks: { ...currentTable.chunks, [key]: chunks || [] },
             loadingCells: omit(currentTable.loadingCells, key),
             columns: currentTable.columns.map(col => ({
               ...col,
               resolvedEntities: col.id === column.id 
                 ? [
                     ...(col.resolvedEntities || []),
-                    ...(resolvedEntities || [])
-                      .filter((entity: EntityLike) => !isGlobalEntity(entity))
+                    ...((resolvedEntities || [])
+                      .filter((entity: EntityLike) => entity && !isGlobalEntity(entity))
                       .map((entity: EntityLike) => ({
                         ...entity,
                         entityType: column.entityType,
@@ -796,7 +806,7 @@ export const useStore = create<Store>()(
                           type: 'column' as const,
                           id: column.id
                         }
-                      })) as ResolvedEntity[]
+                      })) as ResolvedEntity[])
                   ]
                 : (col.resolvedEntities || [])
             })),
@@ -805,8 +815,8 @@ export const useStore = create<Store>()(
               resolvedEntities: rule.type === 'resolve_entity'
                 ? [
                     ...(rule.resolvedEntities || []),
-                    ...(resolvedEntities || [])
-                      .filter((entity: EntityLike) => isGlobalEntity(entity))
+                    ...((resolvedEntities || [])
+                      .filter((entity: EntityLike) => entity && isGlobalEntity(entity))
                       .map((entity: EntityLike) => ({
                         ...entity,
                         entityType: 'global',
@@ -814,7 +824,7 @@ export const useStore = create<Store>()(
                           type: 'global' as const,
                           id: rule.id
                         }
-                      })) as ResolvedEntity[]
+                      })) as ResolvedEntity[])
                   ]
                 : (rule.resolvedEntities || [])
             }))

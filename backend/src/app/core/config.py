@@ -60,10 +60,12 @@ class Settings(BaseSettings):
     project_name: str = "AI Grid API"
     api_v1_str: str = "/api/v1"
     backend_cors_origins: List[str] = [
+        "https://ai-grid.onrender.com",
+        "https://ai-grid-backend.onrender.com",
         "http://localhost:3000",
         "http://localhost:5173",
-        "https://ai-grid.onrender.com",
-        "https://ai-grid-backend.onrender.com"
+        "http://localhost:8000",
+        "http://localhost:8001",
     ]
 
     # LLM CONFIG
