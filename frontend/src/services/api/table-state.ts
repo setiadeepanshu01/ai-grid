@@ -124,7 +124,7 @@ export async function saveTableState(tableId: string, tableName: string, tableDa
     
     // More detailed logging about the response
     console.log(`Save table state response: ${response.status} ${response.statusText}`);
-    console.log(`Response headers: ${JSON.stringify([...response.headers.entries()])}`);
+    // console.log(`Response headers: ${JSON.stringify([...response.headers.entries()])}`);
     
     if (!response.ok) {
       let errorMessage = 'Failed to save table state';
@@ -203,7 +203,7 @@ export async function updateTableState(tableId: string, tableData: any): Promise
     
     // More detailed logging about the response
     console.log(`Update table state response: ${response.status} ${response.statusText}`);
-    console.log(`Response headers: ${JSON.stringify([...response.headers.entries()])}`);
+    // console.log(`Response headers: ${JSON.stringify([...response.headers.entries()])}`);
     
     if (!response.ok) {
       let errorMessage = 'Failed to update table state';

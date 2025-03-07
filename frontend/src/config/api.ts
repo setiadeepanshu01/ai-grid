@@ -175,13 +175,13 @@ export const fetchDocumentPreview = async (documentId: string): Promise<string> 
 };
 
 /**
- * Intelligent batch query executor with adaptive batch sizing and progressive fallback
+ * Advanced batch query executor with robust error handling and retry logic
  * 
- * This implementation uses a more sophisticated approach to batch processing:
- * 1. It starts with a reasonable batch size
- * 2. If a batch fails, it automatically retries with smaller batches
- * 3. It provides immediate feedback as results come in
- * 4. It handles timeouts gracefully with appropriate fallbacks
+ * This implementation uses a sophisticated approach to batch processing:
+ * 1. It uses a queue system to manage batch processing
+ * 2. It tracks the status of each query and retries failed queries
+ * 3. It provides immediate UI updates as results come in
+ * 4. It handles network errors and timeouts gracefully
  * 
  * @param queries Array of query objects, each containing row, column, and globalRules
  * @param options Configuration options for batch processing
@@ -191,7 +191,8 @@ export const runBatchQueries = async (
   queries: Array<{ row: any; column: any; globalRules?: any[]; }>,
   options: {
     batchSize?: number;
-    processIndividually?: boolean;
+    maxRetries?: number;
+    retryDelay?: number;
     onBatchProgress?: (results: any[], batchIndex: number, totalBatches: number) => void;
     onQueryProgress?: (result: any, index: number, total: number) => void;
   } = {}
@@ -200,8 +201,9 @@ export const runBatchQueries = async (
   
   // Default options with reasonable values
   const {
-    batchSize = 3,  // Default to a smaller batch size for better reliability
-    processIndividually = false,
+    batchSize = 20,  // Default to a larger batch size for efficiency
+    maxRetries = 3,  // Maximum number of retries for failed queries
+    retryDelay = 1000,  // Delay between retries in milliseconds
     onBatchProgress,
     onQueryProgress
   } = options;
@@ -240,31 +242,59 @@ export const runBatchQueries = async (
   // Initialize results array with the exact length needed
   const results: any[] = new Array(formattedQueries.length);
   
-  // If processing individually is requested, use the individual processing approach
-  if (processIndividually) {
-    console.log("Processing queries individually as requested");
-    return await processQueriesIndividually(formattedQueries, results, onQueryProgress);
-  }
-  
   // Create batches with the specified batch size
-  const initialBatchSize = Math.max(1, batchSize);
-  const batches = createBatches(formattedQueries, initialBatchSize);
+  const batches = createBatches(formattedQueries, batchSize);
+  console.log(`Created ${batches.length} batches with batch size ${batchSize}`);
   
-  console.log(`Created ${batches.length} batches with batch size ${initialBatchSize}`);
+  // Track failed queries for retry
+  const failedQueries: { query: any; retryCount: number; }[] = [];
   
-  // Process each batch with progressive fallback
+  // Process each batch
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
     console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} queries`);
     
-    // Try to process the batch with progressively smaller sizes until success
-    await processWithProgressiveFallback(
-      batch,
-      results,
-      batchIndex,
-      batches.length,
-      onBatchProgress
-    );
+    try {
+      // Try to process the entire batch
+      const batchResults = await processBatch(batch);
+      
+      // Update results array
+      updateResultsFromBatch(batch, batchResults, results);
+      
+      // Call progress callback if provided
+      if (onBatchProgress) {
+        try {
+          onBatchProgress(batchResults, batchIndex, batches.length);
+        } catch (error) {
+          console.error("Error in batch progress callback:", error);
+        }
+      }
+      
+      // Call individual progress callbacks
+      if (onQueryProgress) {
+        for (let i = 0; i < batchResults.length; i++) {
+          const originalIndex = batch[i]._originalQuery.index;
+          try {
+            onQueryProgress(batchResults[i], originalIndex, formattedQueries.length);
+          } catch (error) {
+            console.error(`Error in query progress callback for index ${originalIndex}:`, error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error processing batch ${batchIndex + 1}:`, error);
+      
+      // Add all queries in this batch to the failed queries list
+      batch.forEach(query => {
+        failedQueries.push({ query, retryCount: 0 });
+      });
+    }
+  }
+  
+  // Process failed queries with retries
+  if (failedQueries.length > 0) {
+    console.log(`Processing ${failedQueries.length} failed queries with retries`);
+    await processFailedQueries(failedQueries, results, maxRetries, retryDelay, onQueryProgress);
   }
   
   // Fill any missing results with fallbacks
@@ -274,69 +304,132 @@ export const runBatchQueries = async (
 };
 
 /**
- * Process a batch of queries with progressive fallback to smaller batches
- * 
- * This function tries to process a batch of queries, and if it fails, it
- * progressively falls back to smaller batches until it succeeds or reaches
- * individual processing.
+ * Process failed queries with retry logic
  */
-async function processWithProgressiveFallback(
-  batch: any[],
+async function processFailedQueries(
+  failedQueries: { query: any; retryCount: number; }[],
   results: any[],
-  batchIndex: number,
-  totalBatches: number,
-  onBatchProgress?: (results: any[], batchIndex: number, totalBatches: number) => void
+  maxRetries: number,
+  retryDelay: number,
+  onQueryProgress?: (result: any, index: number, total: number) => void
 ): Promise<void> {
-  // If batch is small enough, process individually right away
-  if (batch.length <= 1) {
-    console.log(`Batch size is 1, processing individually`);
-    await processQueriesIndividually(batch, results);
-    return;
+  // Process in smaller batches to avoid overwhelming the server
+  const batchSize = 5;
+  const batches = createBatches(failedQueries, batchSize);
+  
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex];
+    console.log(`Processing retry batch ${batchIndex + 1}/${batches.length} with ${batch.length} queries`);
+    
+    // Process each query in the batch
+    const batchPromises = batch.map(async ({ query, retryCount }) => {
+      // Skip if we've exceeded max retries
+      if (retryCount >= maxRetries) {
+        console.log(`Query ${query._originalQuery.index} exceeded max retries`);
+        return;
+      }
+      
+      // Add jitter to retry delay to prevent thundering herd
+      const jitter = Math.random() * 0.5 + 0.75; // 0.75-1.25
+      const delay = retryDelay * jitter * (retryCount + 1);
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      try {
+        // Process the query individually
+        console.log(`Retry attempt ${retryCount + 1}/${maxRetries} for query ${query._originalQuery.index}`);
+        const result = await processIndividualQuery(query);
+        
+        // Update results array
+        const originalIndex = query._originalQuery.index;
+        results[originalIndex] = result;
+        
+        // Call progress callback if provided
+        if (onQueryProgress) {
+          try {
+            onQueryProgress(result, originalIndex, results.length);
+          } catch (error) {
+            console.error(`Error in query progress callback for index ${originalIndex}:`, error);
+          }
+        }
+        
+        return { success: true, query };
+      } catch (error) {
+        console.error(`Retry attempt ${retryCount + 1} failed for query ${query._originalQuery.index}:`, error);
+        
+        // If we haven't exceeded max retries, add back to failed queries with incremented retry count
+        if (retryCount + 1 < maxRetries) {
+          return { success: false, query, retryCount: retryCount + 1 };
+        }
+        
+        // Create fallback result for max retries exceeded
+        const fallbackResult = createFallbackResult(query);
+        const originalIndex = query._originalQuery.index;
+        results[originalIndex] = fallbackResult;
+        
+        // Call progress callback with fallback
+        if (onQueryProgress) {
+          try {
+            onQueryProgress(fallbackResult, originalIndex, results.length);
+          } catch (error) {
+            console.error(`Error in query progress callback for index ${originalIndex}:`, error);
+          }
+        }
+        
+        return { success: true, query }; // Mark as "success" to remove from retry queue
+      }
+    });
+    
+    // Wait for all queries in this batch to complete
+    const batchResults = await Promise.all(batchPromises);
+    
+    // Collect queries that still need retrying
+    const queriesToRetry = batchResults
+      .filter((result): result is { success: false; query: any; retryCount: number } => 
+        result !== undefined && !result.success)
+      .map(result => ({ query: result.query, retryCount: result.retryCount }));
+    
+    // Add queries that need retrying to the next batch
+    if (queriesToRetry.length > 0) {
+      console.log(`Adding ${queriesToRetry.length} queries to retry queue`);
+      failedQueries.push(...queriesToRetry);
+    }
+  }
+}
+
+/**
+ * Process a single query
+ */
+async function processIndividualQuery(query: any): Promise<any> {
+  console.log(`Processing individual query for index ${query._originalQuery.index}`);
+  
+  const startTime = performance.now();
+  
+  const response = await fetch(API_ENDPOINTS.QUERY, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+    mode: 'cors',
+    body: JSON.stringify({
+      document_id: query.document_id,
+      prompt: query.prompt
+    }),
+    signal: AbortSignal.timeout(45000) // 45 second timeout for individual queries
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`Individual query failed with status ${response.status}:`, errorText);
+    throw new ApiError(`Query failed: ${response.statusText}`, response.status);
   }
   
-  try {
-    // Try to process the entire batch
-    console.log(`Attempting to process batch of ${batch.length} queries`);
-    const batchResults = await processBatch(batch);
-    
-    // If successful, update results
-    updateResultsFromBatch(batch, batchResults, results);
-    
-    // Call progress callback if provided
-    if (onBatchProgress && batchResults.length > 0) {
-      try {
-        onBatchProgress(batchResults, batchIndex, totalBatches);
-      } catch (error) {
-        console.error("Error in batch progress callback:", error);
-      }
-    }
-  } catch (error) {
-    console.error(`Error processing batch of ${batch.length} queries:`, error);
-    
-    // If batch size is greater than 1, split and retry with smaller batches
-    if (batch.length > 1) {
-      const halfSize = Math.ceil(batch.length / 2);
-      console.log(`Splitting batch into smaller batches of ~${halfSize} queries`);
-      
-      const smallerBatches = createBatches(batch, halfSize);
-      
-      // Process each smaller batch
-      for (let i = 0; i < smallerBatches.length; i++) {
-        console.log(`Processing smaller batch ${i + 1}/${smallerBatches.length}`);
-        await processWithProgressiveFallback(
-          smallerBatches[i],
-          results,
-          batchIndex,
-          totalBatches,
-          onBatchProgress
-        );
-      }
-    } else {
-      // If batch size is already 1, process individually as last resort
-      console.log(`Falling back to individual processing for single query`);
-      await processQueriesIndividually(batch, results);
-    }
-  }
+  const result = await response.json();
+  
+  const totalTime = performance.now() - startTime;
+  console.log(`Individual query completed in ${Math.round(totalTime)}ms`);
+  
+  return result;
 }
 
 /**
@@ -397,127 +490,6 @@ async function processBatch(batch: any[]): Promise<any[]> {
     }
     throw error;
   }
-}
-
-/**
- * Process queries individually with improved error handling and progress tracking
- */
-async function processQueriesIndividually(
-  queries: any[],
-  results: any[],
-  onQueryProgress?: (result: any, index: number, total: number) => void
-): Promise<any[]> {
-  console.log(`Processing ${queries.length} queries individually`);
-  
-  // Track success and failure counts
-  let successCount = 0;
-  let failureCount = 0;
-  
-  // Process each query sequentially to avoid overwhelming the server
-  for (let i = 0; i < queries.length; i++) {
-    const query = queries[i];
-    console.log(`Processing individual query ${i + 1}/${queries.length}`);
-    
-    // Add performance tracking
-    const startTime = performance.now();
-    
-    try {
-      // Use a reasonable timeout for individual queries
-      const response = await fetch(API_ENDPOINTS.QUERY, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-        mode: 'cors',
-        body: JSON.stringify({
-          document_id: query.document_id,
-          prompt: query.prompt
-        }),
-        signal: AbortSignal.timeout(45000) // 45 second timeout for individual queries
-      });
-      
-      // Log network time
-      const networkTime = performance.now() - startTime;
-      
-      if (!response.ok) {
-        console.warn(`Individual query failed: ${response.status} ${response.statusText} (${Math.round(networkTime)}ms)`);
-        failureCount++;
-        
-        // Create a fallback result for this query
-        const fallbackResult = createFallbackResult(query);
-        
-        // Update results array with fallback
-        const originalIndex = query._originalQuery.index;
-        if (originalIndex >= 0 && originalIndex < results.length) {
-          results[originalIndex] = fallbackResult;
-          
-          // Call progress callback with fallback
-          if (onQueryProgress) {
-            try {
-              onQueryProgress(fallbackResult, originalIndex, queries.length);
-            } catch (error) {
-              console.error("Error in query progress callback:", error);
-            }
-          }
-        }
-        
-        continue;
-      }
-      
-      const result = await response.json();
-      
-      // Log total time
-      const totalTime = performance.now() - startTime;
-      console.log(`Individual query ${i + 1} completed in ${Math.round(totalTime)}ms`);
-      
-      // Update results array
-      const originalIndex = query._originalQuery.index;
-      if (originalIndex >= 0 && originalIndex < results.length) {
-        results[originalIndex] = result;
-        successCount++;
-        
-        // Call progress callback if provided
-        if (onQueryProgress) {
-          try {
-            onQueryProgress(result, originalIndex, queries.length);
-          } catch (error) {
-            console.error("Error in query progress callback:", error);
-          }
-        }
-      }
-    } catch (error) {
-      console.error(`Error processing individual query ${i + 1}:`, error);
-      failureCount++;
-      
-      // Create a fallback result for this query
-      const fallbackResult = createFallbackResult(query);
-      
-      // Update results array with fallback
-      const originalIndex = query._originalQuery.index;
-      if (originalIndex >= 0 && originalIndex < results.length) {
-        results[originalIndex] = fallbackResult;
-        
-        // Call progress callback with fallback
-        if (onQueryProgress) {
-          try {
-            onQueryProgress(fallbackResult, originalIndex, queries.length);
-          } catch (error) {
-            console.error("Error in query progress callback:", error);
-          }
-        }
-      }
-    }
-    
-    // Add a small delay between requests to avoid overwhelming the server
-    // Use a dynamic delay based on position in the queue
-    const delayMs = Math.min(500, 100 + (i % 5) * 50); // Varies between 100-300ms
-    if (i < queries.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, delayMs));
-    }
-  }
-  
-  console.log(`Individual processing complete: ${successCount} succeeded, ${failureCount} failed`);
-  
-  return results;
 }
 
 /**

@@ -5,7 +5,8 @@ import logging
 import uuid
 from typing import Dict, Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.dependencies import get_llm_service, get_vector_db_service
 from app.schemas.query_api import (
@@ -97,7 +98,7 @@ async def run_query(
             elif request.prompt.type == "bool":
                 fallback = False
             elif request.prompt.type == "int_array":
-                fallback = [0]
+                fallback = []
             elif request.prompt.type == "str_array":
                 fallback = []
             else:
@@ -179,6 +180,8 @@ async def run_query(
 
 @router.post("/batch", response_model=List[QueryAnswerResponse])
 async def run_batch_queries(
+    request: Request,
+    response: Response,
     requests: List[QueryRequestSchema],
     llm_service: CompletionService = Depends(get_llm_service),
     vector_db_service: VectorDBService = Depends(get_vector_db_service),
@@ -208,6 +211,13 @@ async def run_batch_queries(
     HTTPException
         If there's an error processing the queries.
     """
+    # Ensure CORS headers are set even for error responses
+    origin = request.headers.get("Origin", "*")
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept, Origin"
+    
     try:
         logger.info(f"Received batch query request with {len(requests)} queries")
         

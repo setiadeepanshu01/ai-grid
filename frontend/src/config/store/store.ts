@@ -894,15 +894,13 @@ export const useStore = create<Store>()(
                             queriesToRun.length > 20 ? 10 : 
                             queriesToRun.length > 10 ? 5 : 2;
         
-        // Use individual processing for small batches or batch processing for larger ones
-        const useIndividualProcessing = queriesToRun.length <= 5;
-        
         // Run batch queries with progressive updates
         runBatchQueries(
           queriesToRun,
           {
             batchSize: useBatchSize,
-            processIndividually: useIndividualProcessing,
+            maxRetries: 3,
+            retryDelay: 1000,
             onQueryProgress: (result, index) => {
               if (result && !result.error && index < queriesToRun.length) {
                 processQueryResult(result, queriesToRun[index]);

@@ -64,20 +64,35 @@ class EnsureCORSMiddleware(BaseHTTPMiddleware):
         Returns:
             Response: The response with CORS headers.
         """
-        # Process the request and get the response
-        response = await call_next(request)
-        
-        # Ensure CORS headers are present
-        response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin", "*")
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        
-        # For preflight requests
-        if request.method == "OPTIONS":
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept, Origin, X-Requested-With, Access-Control-Request-Method, Access-Control-Request-Headers"
-            response.headers["Access-Control-Max-Age"] = "1800"
-        
-        return response
+        try:
+            # Process the request and get the response
+            response = await call_next(request)
+            
+            # Ensure CORS headers are present
+            origin = request.headers.get("Origin", "*")
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            
+            # For preflight requests
+            if request.method == "OPTIONS":
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+                response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept, Origin, X-Requested-With, Access-Control-Request-Method, Access-Control-Request-Headers"
+                response.headers["Access-Control-Max-Age"] = "1800"
+            
+            return response
+        except RuntimeError as e:
+            # Handle the "No response returned" error
+            if str(e) == "No response returned.":
+                # Create a new response with CORS headers
+                response = Response(status_code=204)  # No Content
+                response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin", "*")
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+                response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept, Origin, X-Requested-With, Access-Control-Request-Method, Access-Control-Request-Headers"
+                return response
+            else:
+                # Re-raise other runtime errors
+                raise
 
 # Add the CORS middleware
 app.add_middleware(EnsureCORSMiddleware)
