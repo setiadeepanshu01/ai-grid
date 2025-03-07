@@ -33,7 +33,7 @@ export interface TableStateListResponse {
 const retryFetch = async (
   fetchFn: () => Promise<Response>,
   retries = 3,
-  delay = 1000
+  delay = 3000
 ): Promise<Response> => {
   try {
     return await fetchFn();

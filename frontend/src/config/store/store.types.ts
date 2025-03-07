@@ -14,6 +14,7 @@ export interface Store {
   activePopoverId: string | null;
   documentPreviews: Record<string, string[]>; // Store document preview content by document ID
   auth: AuthState;
+  _saveTableStateTimer: ReturnType<typeof setTimeout> | null; // Timer for debouncing table state saves
 
   toggleColorScheme: () => void;
   setActivePopover: (id: string | null) => void;

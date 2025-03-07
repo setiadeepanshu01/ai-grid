@@ -16,9 +16,20 @@ export function KtProgressBar() {
     }
   }, [requestProgress?.inProgress]);
   
-  // Show notification when progress completes
+  // Track previous inProgress state to detect completion
+  const prevInProgressRef = React.useRef<boolean | undefined>(undefined);
+  
+  // Show notification only when progress transitions from in-progress to complete
   React.useEffect(() => {
-    if (requestProgress && !requestProgress.inProgress && requestProgress.completed > 0 && !requestProgress.error) {
+    // Only show notification when transitioning from in-progress to complete
+    const wasInProgress = prevInProgressRef.current;
+    const isNowComplete = requestProgress && !requestProgress.inProgress && requestProgress.completed > 0 && !requestProgress.error;
+    
+    // Update the ref for next time
+    prevInProgressRef.current = requestProgress?.inProgress;
+    
+    // Only show notification if we were previously in progress and now we're complete
+    if (wasInProgress === true && isNowComplete) {
       try {
         notifications.show({
           title: 'Processing complete',
@@ -30,7 +41,7 @@ export function KtProgressBar() {
         console.error('Error showing notification:', error);
       }
     }
-  }, [requestProgress?.inProgress]);
+  }, [requestProgress?.inProgress, requestProgress?.completed]);
   
   // Don't render if no progress data or dismissed
   if (!requestProgress || dismissed) {

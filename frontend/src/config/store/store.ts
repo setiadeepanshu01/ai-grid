@@ -1086,41 +1086,75 @@ export const useStore = create<Store>()(
         });
       },
 
+      // Debounce timer for saveTableState
+      _saveTableStateTimer: null as ReturnType<typeof setTimeout> | null,
+      
       // Automatic persistence methods
       saveTableState: async () => {
-        const { activeTableId, getTable, auth } = get();
+        const { activeTableId, getTable, auth, _saveTableStateTimer } = get();
         
         // Only save if authenticated
         if (!auth.isAuthenticated || !auth.token) {
           return Promise.resolve();
         }
         
-        try {
-          const table = getTable(activeTableId);
-          
-          try {
-            // First, check if the table state already exists by listing all table states
-            const response = await listTableStates();
-            const existingState = response.items?.find(item => item.id === table.id);
-            
-            if (existingState) {
-              // If it exists, update it
-              await apiUpdateTableState(table.id, table);
-            } else {
-              // If it doesn't exist, create a new one
-              await apiSaveTableState(table.id, table.name, table);
-            }
-            
-            return Promise.resolve();
-          } catch (apiError) {
-            // Log the error but don't reject the promise
-            console.error('Error saving table state to API:', apiError);
-            return Promise.resolve();
-          }
-        } catch (error) {
-          console.error('Error preparing table state for save:', error);
-          return Promise.resolve(); // Resolve instead of reject to avoid error notifications
+        // Clear any existing timer
+        if (_saveTableStateTimer) {
+          clearTimeout(_saveTableStateTimer);
         }
+        
+        // Set a new timer to debounce the save operation (wait 2 seconds)
+        const timer = setTimeout(async () => {
+          try {
+            const table = getTable(activeTableId);
+            
+            try {
+              // Try to update first without checking if it exists
+              // This is more efficient and avoids an extra API call
+              try {
+                await apiUpdateTableState(table.id, table);
+                console.log('Table state updated successfully');
+                return;
+              } catch (updateError) {
+                // If update fails with a 404, the table state doesn't exist yet
+                // In that case, try to create it
+                if (updateError instanceof Error && updateError.message.includes('not found')) {
+                  await apiSaveTableState(table.id, table.name, table);
+                  console.log('Table state created successfully');
+                  return;
+                }
+                
+                // For other errors, try the fallback approach
+                console.log('Update failed, trying fallback approach');
+                
+                // Fallback: check if the table state exists by listing all table states
+                const response = await listTableStates();
+                const existingState = response.items?.find(item => item.id === table.id);
+                
+                if (existingState) {
+                  // If it exists, update it
+                  await apiUpdateTableState(table.id, table);
+                } else {
+                  // If it doesn't exist, create a new one
+                  await apiSaveTableState(table.id, table.name, table);
+                }
+              }
+            } catch (apiError) {
+              // Log the error but don't reject the promise
+              console.error('Error saving table state to API:', apiError);
+            }
+          } catch (error) {
+            console.error('Error preparing table state for save:', error);
+          } finally {
+            // Clear the timer reference
+            set({ _saveTableStateTimer: null });
+          }
+        }, 2000);
+        
+        // Store the timer
+        set({ _saveTableStateTimer: timer });
+        
+        return Promise.resolve();
       },
       
       loadLatestTableState: async () => {
@@ -1264,6 +1298,20 @@ export const useStore = create<Store>()(
 
       clear: allTables => {
         if (allTables) {
+          // Clear all browser storage
+          try {
+            // Clear sessionStorage
+            sessionStorage.clear();
+            
+            // Clear localStorage
+            localStorage.clear();
+            
+            console.log('All browser storage cleared');
+          } catch (e) {
+            console.error('Error clearing browser storage:', e);
+          }
+          
+          // Reset the store to initial state
           set({
             ...getInitialData(),
             documentPreviews: {} // Clear document previews when clearing all tables
@@ -1280,38 +1328,40 @@ export const useStore = create<Store>()(
     }),
     {
       name: "store",
-      version: 11, // Increment version due to schema change
+      version: 12, // Increment version due to schema change
       partialize: (state) => {
-        // If authenticated, only persist minimal data to localStorage
-        if (state.auth.isAuthenticated) {
-          return {
-            // Keep table metadata but not the full data
-            tables: state.tables.map(table => ({
-              id: table.id,
-              name: table.name,
-              // Don't persist actual content for large tables
-              columns: [],
-              rows: [],
-              globalRules: [],
-              filters: [],
-              chunks: {},
-              openedChunks: [],
-              loadingCells: {},
-              uploadingFiles: false
-            })),
-            activeTableId: state.activeTableId,
-            activePopoverId: null,
-            colorScheme: state.colorScheme,
-            auth: state.auth
-          };
-        } else {
-          // If not authenticated, persist all data but exclude some runtime state
-          return {
-            ...state,
-            activePopoverId: null,
-            documentPreviews: state.documentPreviews,
-            auth: state.auth
-          };
+        // Store minimal data regardless of authentication state
+        return {
+          // Only store auth state and color scheme
+          auth: state.auth,
+          colorScheme: state.colorScheme
+        };
+      },
+      // Add storage option to use sessionStorage instead of localStorage
+      // This will clear when the browser is closed
+      storage: {
+        getItem: (name) => {
+          try {
+            const value = sessionStorage.getItem(name);
+            return value ? JSON.parse(value) : null;
+          } catch (e) {
+            console.error('Error reading from sessionStorage:', e);
+            return null;
+          }
+        },
+        setItem: (name, value) => {
+          try {
+            sessionStorage.setItem(name, JSON.stringify(value));
+          } catch (e) {
+            console.error('Error writing to sessionStorage:', e);
+          }
+        },
+        removeItem: (name) => {
+          try {
+            sessionStorage.removeItem(name);
+          } catch (e) {
+            console.error('Error removing from sessionStorage:', e);
+          }
         }
       }
     }
