@@ -173,70 +173,20 @@ export const fetchDocumentPreview = async (documentId: string): Promise<string> 
     throw error;
   }
 };
+
 /**
- * Runs batch queries with improved handling for large batches.
- * This implementation supports both single batch mode and individual processing.
+ * Intelligent batch query executor with adaptive batch sizing and progressive fallback
+ * 
+ * This implementation uses a more sophisticated approach to batch processing:
+ * 1. It starts with a reasonable batch size
+ * 2. If a batch fails, it automatically retries with smaller batches
+ * 3. It provides immediate feedback as results come in
+ * 4. It handles timeouts gracefully with appropriate fallbacks
  * 
  * @param queries Array of query objects, each containing row, column, and globalRules
  * @param options Configuration options for batch processing
  * @returns Promise resolving to an array of query results in the same order as input
  */
-/**
- * Helper function to retry a fetch request with exponential backoff
- * @param fetchFn Function that performs the fetch operation
- * @param retries Number of retries
- * @param delay Initial delay in ms
- * @returns Promise with the fetch result
- */
-const retryFetch = async (
-  fetchFn: () => Promise<Response>,
-  retries = 5,  // Increased from 3 to 5
-  delay = 1000  // Decreased from 3000 to 1000 for faster initial retry
-): Promise<Response> => {
-  let lastError: any;
-  let attempt = 0;
-  
-  while (attempt <= retries) {
-    try {
-      const response = await fetchFn();
-      
-      // For 502 Bad Gateway, 504 Gateway Timeout, or 503 Service Unavailable, retry
-      if ((response.status === 502 || response.status === 504 || response.status === 503) && attempt < retries) {
-        console.log(`Received ${response.status} status, retrying (${retries - attempt} retries left) after ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        attempt++;
-        delay *= 2; // Exponential backoff
-        continue;
-      }
-      
-      // For 404 Not Found on table state, we'll handle it at a higher level
-      // by trying to create the resource instead
-      
-      return response;
-    } catch (error) {
-      lastError = error;
-      console.error('Fetch error:', error);
-      
-      // If it's a network error (TypeError) or CORS error, retry
-      // CORS errors typically manifest as TypeError with "Failed to fetch" message
-      const isCorsOrNetworkError = 
-        error instanceof TypeError || // Network error
-        (error instanceof ApiError && (error.status === 502 || error.status === 504 || error.status === 503 || error.status === 0)); // Gateway errors or CORS
-      
-      if (!isCorsOrNetworkError || attempt >= retries) break;
-      
-      console.log(`Retrying fetch (${retries - attempt} retries left) after ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      attempt++;
-      delay *= 2; // Exponential backoff
-    }
-  }
-  
-  // If we've exhausted all retries, throw the last error
-  console.error('All retry attempts failed:', lastError);
-  throw lastError;
-};
-
 export const runBatchQueries = async (
   queries: Array<{ row: any; column: any; globalRules?: any[]; }>,
   options: {
@@ -246,8 +196,11 @@ export const runBatchQueries = async (
     onQueryProgress?: (result: any, index: number, total: number) => void;
   } = {}
 ): Promise<any[]> => {
+  console.log(`Starting batch query execution for ${queries.length} queries`);
+  
+  // Default options with reasonable values
   const {
-    batchSize = 5,  // Reduced from 10 to 5 for smaller batch sizes
+    batchSize = 3,  // Default to a smaller batch size for better reliability
     processIndividually = false,
     onBatchProgress,
     onQueryProgress
@@ -272,352 +225,383 @@ export const runBatchQueries = async (
       _originalQuery: { row, column, index: 0 } 
     };
   });
+  
   // Update the index information
   formattedQueries.forEach((query, index) => {
     query._originalQuery.index = index;
   });
   
-  // If processing individually, run each query separately and collect results
-  if (processIndividually) {
-    const results: any[] = new Array(formattedQueries.length);
-    const promises = formattedQueries.map(async (query, index) => {
-      try {
-      const response = await retryFetch(
-        () => fetch(API_ENDPOINTS.QUERY, {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          credentials: 'include',
-          body: JSON.stringify({
-            document_id: query.document_id,
-            prompt: query.prompt
-          }),
-        }),
-        2, // 2 retries
-        1000 // 1 second initial delay
-      );
-        
-        if (!response.ok) {
-          throw new ApiError(`Query failed: ${response.statusText}`, response.status);
-        }
-        
-        const result = await response.json();
-        results[index] = result;
-        
-        // Call progress callback if provided
-        if (onQueryProgress) {
-          onQueryProgress(result, index, formattedQueries.length);
-        }
-        
-        return result;
-      } catch (error) {
-        console.error(`Error running individual query ${index}:`, error);
-        if (onQueryProgress) {
-          onQueryProgress({ error }, index, formattedQueries.length);
-        }
-        throw error;
-      }
-    });
-    
-    await Promise.allSettled(promises);
-    return results;
-  }
-  
-  // Validate that we have at least one query before creating batches
+  // If no queries, return empty array
   if (formattedQueries.length === 0) {
     console.warn("No queries to process, returning empty results");
     return [];
   }
   
-  // Process in batches - ensure batchSize is at least 1
-  const safeBatchSize = Math.max(1, batchSize);
-  const batches = [];
-  for (let i = 0; i < formattedQueries.length; i += safeBatchSize) {
-    batches.push(formattedQueries.slice(i, i + safeBatchSize));
-  }
-  
-  console.log(`Running ${batches.length} batch queries with ${formattedQueries.length} total queries`);
-  
   // Initialize results array with the exact length needed
   const results: any[] = new Array(formattedQueries.length);
   
-  // Process each batch
+  // If processing individually is requested, use the individual processing approach
+  if (processIndividually) {
+    console.log("Processing queries individually as requested");
+    return await processQueriesIndividually(formattedQueries, results, onQueryProgress);
+  }
+  
+  // Create batches with the specified batch size
+  const initialBatchSize = Math.max(1, batchSize);
+  const batches = createBatches(formattedQueries, initialBatchSize);
+  
+  console.log(`Created ${batches.length} batches with batch size ${initialBatchSize}`);
+  
+  // Process each batch with progressive fallback
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
+    console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} queries`);
     
-    try {
-      console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} queries`);
-      
-      // Use fallback to individual queries if batch size is large (more than 20 items)
-      // Reduced threshold from 50 to 20 to trigger individual processing more often
-      if (batch.length > 20) {
-        console.log(`Large batch detected (${batch.length} items), processing individually`);
-        
-        // Process each query individually but in parallel
-        const individualResults = await Promise.allSettled(
-          batch.map(query => 
-            fetch(API_ENDPOINTS.QUERY, {
-              method: 'POST',
-              headers: getAuthHeaders(),
-              credentials: 'include',
-              body: JSON.stringify({ 
-                document_id: query.document_id, 
-                prompt: query.prompt 
-              }),
-            })
-            .then(resp => {
-              if (!resp.ok) {
-                console.warn(`Individual query failed: ${resp.status} ${resp.statusText}`);
-                return null;
-              }
-              return resp.json();
-            })
-            .catch(err => {
-              console.error('Error in individual query:', err);
-              return null;
-            })
-          )
-        );
-        
-        // Process results from individual queries
-        const batchResults = individualResults.map(result => 
-          result.status === 'fulfilled' && result.value ? result.value : null
-        );
-        
-        console.log(`Processed ${batchResults.filter(r => r !== null).length} of ${batch.length} queries individually`);
-        
-        // Map batch results to the correct positions in the final results array
-        for (let resultIndex = 0; resultIndex < batch.length; resultIndex++) {
-          try {
-            const originalIndex = batch[resultIndex]._originalQuery.index;
-            
-            // Make sure the original index is within bounds
-            if (originalIndex >= 0 && originalIndex < results.length && batchResults[resultIndex]) {
-              results[originalIndex] = batchResults[resultIndex];
-            }
-          } catch (error) {
-            console.error(`Error mapping individual result at index ${resultIndex}:`, error);
-          }
-        }
-        
-        // Call batch progress callback if provided
-        if (onBatchProgress) {
-          try {
-            const safeResults = batchResults.filter(r => r !== null);
-            onBatchProgress(safeResults, batchIndex, batches.length);
-          } catch (error) {
-            console.error("Error in batch progress callback:", error);
-          }
-        }
-        
-        // Skip the rest of the batch processing for this batch
-        continue;
-      }
-      
-      // For small batches, use the batch API as normal
-      const response = await retryFetch(
-        () => fetch(API_ENDPOINTS.BATCH_QUERY, {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          credentials: 'include',
-          body: JSON.stringify(batch.map(q => ({ document_id: q.document_id, prompt: q.prompt }))),
-          // Add mode: 'cors' explicitly
-          mode: 'cors',
-          // Add longer timeout
-          signal: AbortSignal.timeout(30000) // 30 second timeout
-        }),
-        3, // Increased from 2 to 3 retries
-        1000 // 1 second initial delay
-      );
-      
-      if (!response.ok) {
-        // Get more detailed error information
-        try {
-          const errorText = await response.text();
-          console.error("Batch query error details:", errorText);
-          
-          // Try to parse as JSON for more detailed error info
-          try {
-            const errorJson = JSON.parse(errorText);
-            console.error("Parsed error JSON:", errorJson);
-            
-            // If we get a 502 Bad Gateway or other server error, fall back to individual processing
-            if (response.status >= 500) {
-              console.log(`Server error (${response.status}), falling back to individual processing for this batch`);
-              
-              // Process each query individually but in parallel
-              const individualResults = await Promise.allSettled(
-                batch.map(query => 
-                  retryFetch(() => fetch(API_ENDPOINTS.QUERY, {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    credentials: 'include',
-                    mode: 'cors',
-                    body: JSON.stringify({ 
-                      document_id: query.document_id, 
-                      prompt: query.prompt 
-                    }),
-                  }))
-                  .then(resp => {
-                    if (!resp.ok) {
-                      console.warn(`Individual query failed: ${resp.status} ${resp.statusText}`);
-                      return null;
-                    }
-                    return resp.json();
-                  })
-                  .catch(err => {
-                    console.error('Error in individual query:', err);
-                    return null;
-                  })
-                )
-              );
-              
-              // Process results from individual queries
-              const batchResults = individualResults.map(result => 
-                result.status === 'fulfilled' && result.value ? result.value : null
-              );
-              
-              console.log(`Processed ${batchResults.filter(r => r !== null).length} of ${batch.length} queries individually`);
-              
-              // Map batch results to the correct positions in the final results array
-              for (let resultIndex = 0; resultIndex < batch.length; resultIndex++) {
-                try {
-                  const originalIndex = batch[resultIndex]._originalQuery.index;
-                  
-                  // Make sure the original index is within bounds
-                  if (originalIndex >= 0 && originalIndex < results.length && batchResults[resultIndex]) {
-                    results[originalIndex] = batchResults[resultIndex];
-                  }
-                } catch (error) {
-                  console.error(`Error mapping individual result at index ${resultIndex}:`, error);
-                }
-              }
-              
-              // Call batch progress callback if provided
-              if (onBatchProgress) {
-                try {
-                  const safeResults = batchResults.filter(r => r !== null);
-                  onBatchProgress(safeResults, batchIndex, batches.length);
-                } catch (error) {
-                  console.error("Error in batch progress callback:", error);
-                }
-              }
-              
-              // Skip the rest of the batch processing for this batch
-              continue;
-            }
-            
-            throw new ApiError(`Batch query failed: ${errorJson.detail || response.statusText}`, response.status);
-          } catch (jsonError) {
-            // If JSON parsing fails, use the raw text
-            console.error("Error parsing error JSON:", jsonError);
-            throw new ApiError(`Batch query failed: ${errorText || response.statusText}`, response.status);
-          }
-        } catch (textError) {
-          // If we can't even get the response text, fall back to status text
-          console.error("Error getting error text:", textError);
-          throw new ApiError(`Batch query failed: ${response.statusText}`, response.status);
-        }
-      }
-      
-      let batchResults;
-      try {
-        batchResults = await response.json();
-      } catch (error) {
-        console.error('Error parsing batch response JSON:', error);
-        throw new ApiError('Invalid JSON in batch response', response.status);
-      }
-      
-      // Validate that batchResults is an array
-      if (!Array.isArray(batchResults)) {
-        console.error('Batch results is not an array:', batchResults);
-        // Instead of throwing, create an empty array to avoid breaking the process
-        batchResults = [];
-      }
-      
-      // Ensure batchResults doesn't exceed batch length
-      if (batchResults.length > batch.length) {
-        console.warn(`Batch results length (${batchResults.length}) exceeds batch length (${batch.length}), truncating`);
-        batchResults = batchResults.slice(0, batch.length);
-      }
-      
-      // Map batch results to the correct positions in the final results array
-      // Handle the case where batchResults.length might not match batch.length
-      const validResultsLength = Math.min(batchResults.length, batch.length);
-      
-      for (let resultIndex = 0; resultIndex < validResultsLength; resultIndex++) {
-        try {
-          const originalIndex = batch[resultIndex]._originalQuery.index;
-          
-          // Make sure the original index is within bounds
-          if (originalIndex >= 0 && originalIndex < results.length) {
-            // Add safety check for malformed results
-            try {
-              // Validate that the result has the required structure
-              if (!batchResults[resultIndex] || 
-                  !batchResults[resultIndex].answer ||
-                  typeof batchResults[resultIndex].answer !== 'object') {
-                console.warn(`Invalid batch result at index ${resultIndex}, creating fallback`);
-                // Create a fallback result with the right structure
-                results[originalIndex] = {
-                  answer: {
-                    id: `fallback-${Math.random().toString(36).substring(2)}`,
-                    document_id: batch[resultIndex].document_id,
-                    prompt_id: batch[resultIndex].prompt.id,
-                    answer: batch[resultIndex].prompt.type === 'bool' ? false :
-                           batch[resultIndex].prompt.type === 'int' ? 0 :
-                           batch[resultIndex].prompt.type.includes('array') ? [] : 
-                           "Error: Failed to process query",
-                    type: batch[resultIndex].prompt.type
-                  },
-                  chunks: [],
-                  resolved_entities: []
-                };
-              } else {
-                // Valid result, use it
-                results[originalIndex] = batchResults[resultIndex];
-              }
-            } catch (validationError) {
-              console.error(`Error validating batch result at index ${resultIndex}:`, validationError);
-              // Create fallback for invalid results
-              results[originalIndex] = {
-                answer: {
-                  id: `fallback-${Math.random().toString(36).substring(2)}`,
-                  document_id: batch[resultIndex].document_id,
-                  prompt_id: batch[resultIndex].prompt.id,
-                  answer: "Error: Failed to process query",
-                  type: batch[resultIndex].prompt.type
-                },
-                chunks: [],
-                resolved_entities: []
-              };
-            }
-          } else {
-            console.error(`Invalid original index: ${originalIndex} for batch result ${resultIndex}`);
-          }
-        } catch (error) {
-          console.error(`Error mapping batch result at index ${resultIndex}:`, error);
-        }
-      }
-      
-      // Call batch progress callback if provided
-      if (onBatchProgress) {
-        try {
-          // Create a safe copy of the results for this batch
-          const safeResults = batchResults.slice(0, batch.length);
-          onBatchProgress(safeResults, batchIndex, batches.length);
-        } catch (error) {
-          console.error("Error in batch progress callback:", error);
-        }
-      }
-      
-    } catch (error) {
-      console.error(`Error running batch ${batchIndex + 1}:`, error);
-      throw error;
-    }
+    // Try to process the batch with progressively smaller sizes until success
+    await processWithProgressiveFallback(
+      batch,
+      results,
+      batchIndex,
+      batches.length,
+      onBatchProgress
+    );
   }
+  
+  // Fill any missing results with fallbacks
+  fillMissingResults(formattedQueries, results);
   
   return results;
 };
+
+/**
+ * Process a batch of queries with progressive fallback to smaller batches
+ * 
+ * This function tries to process a batch of queries, and if it fails, it
+ * progressively falls back to smaller batches until it succeeds or reaches
+ * individual processing.
+ */
+async function processWithProgressiveFallback(
+  batch: any[],
+  results: any[],
+  batchIndex: number,
+  totalBatches: number,
+  onBatchProgress?: (results: any[], batchIndex: number, totalBatches: number) => void
+): Promise<void> {
+  // If batch is small enough, process individually right away
+  if (batch.length <= 1) {
+    console.log(`Batch size is 1, processing individually`);
+    await processQueriesIndividually(batch, results);
+    return;
+  }
+  
+  try {
+    // Try to process the entire batch
+    console.log(`Attempting to process batch of ${batch.length} queries`);
+    const batchResults = await processBatch(batch);
+    
+    // If successful, update results
+    updateResultsFromBatch(batch, batchResults, results);
+    
+    // Call progress callback if provided
+    if (onBatchProgress && batchResults.length > 0) {
+      try {
+        onBatchProgress(batchResults, batchIndex, totalBatches);
+      } catch (error) {
+        console.error("Error in batch progress callback:", error);
+      }
+    }
+  } catch (error) {
+    console.error(`Error processing batch of ${batch.length} queries:`, error);
+    
+    // If batch size is greater than 1, split and retry with smaller batches
+    if (batch.length > 1) {
+      const halfSize = Math.ceil(batch.length / 2);
+      console.log(`Splitting batch into smaller batches of ~${halfSize} queries`);
+      
+      const smallerBatches = createBatches(batch, halfSize);
+      
+      // Process each smaller batch
+      for (let i = 0; i < smallerBatches.length; i++) {
+        console.log(`Processing smaller batch ${i + 1}/${smallerBatches.length}`);
+        await processWithProgressiveFallback(
+          smallerBatches[i],
+          results,
+          batchIndex,
+          totalBatches,
+          onBatchProgress
+        );
+      }
+    } else {
+      // If batch size is already 1, process individually as last resort
+      console.log(`Falling back to individual processing for single query`);
+      await processQueriesIndividually(batch, results);
+    }
+  }
+}
+
+/**
+ * Process a batch of queries using the batch API endpoint
+ */
+async function processBatch(batch: any[]): Promise<any[]> {
+  // Calculate an appropriate timeout based on batch size
+  // Larger batches need more time (base: 30s, +5s per query)
+  const timeoutMs = Math.min(60000, 30000 + (batch.length * 5000));
+  
+  console.log(`Processing batch of ${batch.length} queries with ${timeoutMs}ms timeout`);
+  
+  // Add performance tracking
+  const startTime = performance.now();
+  
+  try {
+    const response = await fetch(API_ENDPOINTS.BATCH_QUERY, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      credentials: 'include',
+      mode: 'cors',
+      body: JSON.stringify(batch.map(q => ({ 
+        document_id: q.document_id, 
+        prompt: q.prompt 
+      }))),
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+    
+    // Log performance metrics
+    const endTime = performance.now();
+    console.log(`Batch query network time: ${Math.round(endTime - startTime)}ms`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Batch query failed with status ${response.status}:`, errorText);
+      throw new ApiError(`Batch query failed: ${response.statusText}`, response.status);
+    }
+    
+    const batchResults = await response.json();
+    
+    // Log total time including JSON parsing
+    const totalTime = performance.now();
+    console.log(`Batch query total time: ${Math.round(totalTime - startTime)}ms`);
+    
+    if (!Array.isArray(batchResults)) {
+      console.error('Batch results is not an array:', batchResults);
+      throw new Error('Invalid batch response format');
+    }
+    
+    return batchResults;
+  } catch (error) {
+    // Log detailed error information
+    console.error(`Batch query failed after ${Math.round(performance.now() - startTime)}ms:`, error);
+    
+    // Rethrow with more context
+    if (error instanceof Error) {
+      throw new Error(`Batch query failed: ${error.message} (batch size: ${batch.length})`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Process queries individually with improved error handling and progress tracking
+ */
+async function processQueriesIndividually(
+  queries: any[],
+  results: any[],
+  onQueryProgress?: (result: any, index: number, total: number) => void
+): Promise<any[]> {
+  console.log(`Processing ${queries.length} queries individually`);
+  
+  // Track success and failure counts
+  let successCount = 0;
+  let failureCount = 0;
+  
+  // Process each query sequentially to avoid overwhelming the server
+  for (let i = 0; i < queries.length; i++) {
+    const query = queries[i];
+    console.log(`Processing individual query ${i + 1}/${queries.length}`);
+    
+    // Add performance tracking
+    const startTime = performance.now();
+    
+    try {
+      // Use a reasonable timeout for individual queries
+      const response = await fetch(API_ENDPOINTS.QUERY, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        mode: 'cors',
+        body: JSON.stringify({
+          document_id: query.document_id,
+          prompt: query.prompt
+        }),
+        signal: AbortSignal.timeout(45000) // 45 second timeout for individual queries
+      });
+      
+      // Log network time
+      const networkTime = performance.now() - startTime;
+      
+      if (!response.ok) {
+        console.warn(`Individual query failed: ${response.status} ${response.statusText} (${Math.round(networkTime)}ms)`);
+        failureCount++;
+        
+        // Create a fallback result for this query
+        const fallbackResult = createFallbackResult(query);
+        
+        // Update results array with fallback
+        const originalIndex = query._originalQuery.index;
+        if (originalIndex >= 0 && originalIndex < results.length) {
+          results[originalIndex] = fallbackResult;
+          
+          // Call progress callback with fallback
+          if (onQueryProgress) {
+            try {
+              onQueryProgress(fallbackResult, originalIndex, queries.length);
+            } catch (error) {
+              console.error("Error in query progress callback:", error);
+            }
+          }
+        }
+        
+        continue;
+      }
+      
+      const result = await response.json();
+      
+      // Log total time
+      const totalTime = performance.now() - startTime;
+      console.log(`Individual query ${i + 1} completed in ${Math.round(totalTime)}ms`);
+      
+      // Update results array
+      const originalIndex = query._originalQuery.index;
+      if (originalIndex >= 0 && originalIndex < results.length) {
+        results[originalIndex] = result;
+        successCount++;
+        
+        // Call progress callback if provided
+        if (onQueryProgress) {
+          try {
+            onQueryProgress(result, originalIndex, queries.length);
+          } catch (error) {
+            console.error("Error in query progress callback:", error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error processing individual query ${i + 1}:`, error);
+      failureCount++;
+      
+      // Create a fallback result for this query
+      const fallbackResult = createFallbackResult(query);
+      
+      // Update results array with fallback
+      const originalIndex = query._originalQuery.index;
+      if (originalIndex >= 0 && originalIndex < results.length) {
+        results[originalIndex] = fallbackResult;
+        
+        // Call progress callback with fallback
+        if (onQueryProgress) {
+          try {
+            onQueryProgress(fallbackResult, originalIndex, queries.length);
+          } catch (error) {
+            console.error("Error in query progress callback:", error);
+          }
+        }
+      }
+    }
+    
+    // Add a small delay between requests to avoid overwhelming the server
+    // Use a dynamic delay based on position in the queue
+    const delayMs = Math.min(500, 100 + (i % 5) * 50); // Varies between 100-300ms
+    if (i < queries.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  
+  console.log(`Individual processing complete: ${successCount} succeeded, ${failureCount} failed`);
+  
+  return results;
+}
+
+/**
+ * Create a fallback result for a failed query
+ */
+function createFallbackResult(query: any): any {
+  return {
+    answer: {
+      id: `fallback-${Math.random().toString(36).substring(2)}`,
+      document_id: query.document_id,
+      prompt_id: query.prompt.id,
+      answer: query.prompt.type === 'bool' ? false :
+             query.prompt.type === 'int' ? 0 :
+             query.prompt.type.includes('array') ? [] : 
+             "Query failed to process",
+      type: query.prompt.type
+    },
+    chunks: [],
+    resolved_entities: []
+  };
+}
+
+/**
+ * Create batches from an array of queries
+ */
+function createBatches<T>(items: T[], batchSize: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    batches.push(items.slice(i, i + batchSize));
+  }
+  return batches;
+}
+
+/**
+ * Update results array from batch results
+ */
+function updateResultsFromBatch(batch: any[], batchResults: any[], results: any[]): void {
+  // Ensure batchResults doesn't exceed batch length
+  const validResultsLength = Math.min(batchResults.length, batch.length);
+  
+  for (let resultIndex = 0; resultIndex < validResultsLength; resultIndex++) {
+    try {
+      const originalIndex = batch[resultIndex]._originalQuery.index;
+      
+      // Make sure the original index is within bounds
+      if (originalIndex >= 0 && originalIndex < results.length) {
+        // Validate that the result has the required structure
+        if (!batchResults[resultIndex] || 
+            !batchResults[resultIndex].answer ||
+            typeof batchResults[resultIndex].answer !== 'object') {
+          console.warn(`Invalid batch result at index ${resultIndex}, skipping`);
+          continue;
+        }
+        
+        // Valid result, use it
+        results[originalIndex] = batchResults[resultIndex];
+      }
+    } catch (error) {
+      console.error(`Error mapping batch result at index ${resultIndex}:`, error);
+    }
+  }
+}
+
+/**
+ * Fill any missing results with fallbacks and ensure UI updates
+ */
+function fillMissingResults(queries: any[], results: any[]): void {
+  let missingCount = 0;
+  
+  for (let i = 0; i < queries.length; i++) {
+    if (!results[i]) {
+      const query = queries[i];
+      missingCount++;
+      
+      // Create fallback based on prompt type
+      results[i] = createFallbackResult(query);
+    }
+  }
+  
+  if (missingCount > 0) {
+    console.log(`Created ${missingCount} fallbacks for missing results`);
+  }
+}
+
 // API endpoints
 export const API_ENDPOINTS = {
   // Base API URL
