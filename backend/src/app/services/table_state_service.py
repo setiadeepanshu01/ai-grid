@@ -16,11 +16,37 @@ settings = get_settings()
 # Set up logging
 logger = logging.getLogger(__name__)
 
-# Get the database path from settings
-DB_PATH = settings.table_states_db_uri
+# Force the database path to be in the /data directory for persistence
+# This ensures the database is stored in the same location as milvus_db.db
+# and will survive container rebuilds
+if settings.environment == "production":
+    # In production, always use the /data directory
+    DB_PATH = "/data/table_states.db"
+    logger.info(f"Production environment detected, forcing database path to {DB_PATH}")
+else:
+    # In development, use the configured path
+    DB_PATH = settings.table_states_db_uri
+    logger.info(f"Using configured database path: {DB_PATH}")
+
+# Log the database path for debugging
+logger.info(f"Table states database path: {DB_PATH}")
+logger.info(f"Absolute database path: {os.path.abspath(DB_PATH)}")
 
 # Ensure the directory exists
-os.makedirs(os.path.dirname(DB_PATH) if os.path.dirname(DB_PATH) else '.', exist_ok=True)
+dir_path = os.path.dirname(DB_PATH) if os.path.dirname(DB_PATH) else '.'
+os.makedirs(dir_path, exist_ok=True)
+logger.info(f"Ensured directory exists: {dir_path}")
+
+# Check if we can write to the directory
+try:
+    test_file_path = os.path.join(dir_path, '.write_test')
+    with open(test_file_path, 'w') as f:
+        f.write('test')
+    os.remove(test_file_path)
+    logger.info(f"Successfully verified write access to {dir_path}")
+except Exception as e:
+    logger.error(f"Cannot write to directory {dir_path}: {e}")
+    logger.error(f"This will cause database operations to fail!")
 
 # Initialize the database
 def init_db():

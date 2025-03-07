@@ -166,3 +166,8 @@ cython_debug/
 
 # Custom
 .tests_static_analysis.sh
+
+# Database files
+*.db
+/src/data/
+/data/
