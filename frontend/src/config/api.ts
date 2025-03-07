@@ -325,8 +325,15 @@ export const runBatchQueries = async (
     batches.push(formattedQueries.slice(i, i + batchSize));
   }
   
+  // Validate that we have at least one batch and one query
+  if (formattedQueries.length === 0) {
+    console.warn("No queries to process, returning empty results");
+    return [];
+  }
+  
   console.log(`Running ${batches.length} batch queries with ${formattedQueries.length} total queries`);
   
+  // Initialize results array with the exact length needed
   const results: any[] = new Array(formattedQueries.length);
   
   // Process each batch
@@ -353,15 +360,37 @@ export const runBatchQueries = async (
       
       const batchResults = await response.json();
       
+      // Validate that batchResults is an array
+      if (!Array.isArray(batchResults)) {
+        console.error('Batch results is not an array:', batchResults);
+        throw new ApiError('Invalid batch response format', response.status);
+      }
+      
       // Map batch results to the correct positions in the final results array
-      batchResults.forEach((result: any, resultIndex: number) => {
-        const originalIndex = batch[resultIndex]._originalQuery.index;
-        results[originalIndex] = result;
-      });
+      for (let resultIndex = 0; resultIndex < batchResults.length; resultIndex++) {
+        // Make sure we have a valid batch entry at this index
+        if (resultIndex < batch.length) {
+          const originalIndex = batch[resultIndex]._originalQuery.index;
+          // Make sure the original index is within bounds
+          if (originalIndex >= 0 && originalIndex < results.length) {
+            results[originalIndex] = batchResults[resultIndex];
+          } else {
+            console.error(`Invalid original index: ${originalIndex} for batch result ${resultIndex}`);
+          }
+        } else {
+          console.error(`Batch result index ${resultIndex} exceeds batch length ${batch.length}`);
+        }
+      }
       
       // Call batch progress callback if provided
       if (onBatchProgress) {
-        onBatchProgress(batchResults, batchIndex, batches.length);
+        try {
+          // Create a safe copy of the results for this batch
+          const safeResults = batchResults.slice(0, batch.length);
+          onBatchProgress(safeResults, batchIndex, batches.length);
+        } catch (error) {
+          console.error("Error in batch progress callback:", error);
+        }
       }
       
     } catch (error) {

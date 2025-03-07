@@ -105,7 +105,8 @@ async def startup_event():
     logger.info("Initializing application services...")
     
     # Ensure data directory exists with proper permissions
-    data_dir = "/data"
+    # Use the directory from the table_states_db_uri setting
+    data_dir = os.path.dirname(os.path.abspath(settings.table_states_db_uri))
     try:
         os.makedirs(data_dir, exist_ok=True)
         logger.info(f"Ensured data directory exists: {data_dir}")

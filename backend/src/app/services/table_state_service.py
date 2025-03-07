@@ -16,17 +16,9 @@ settings = get_settings()
 # Set up logging
 logger = logging.getLogger(__name__)
 
-# Force the database path to be in the /data directory for persistence
-# This ensures the database is stored in the same location as milvus_db.db
-# and will survive container rebuilds
-if settings.environment == "production":
-    # In production, always use the /data directory
-    DB_PATH = "/data/table_states.db"
-    logger.info(f"Production environment detected, forcing database path to {DB_PATH}")
-else:
-    # In development, use the configured path
-    DB_PATH = settings.table_states_db_uri
-    logger.info(f"Using configured database path: {DB_PATH}")
+# Use the configured database path from settings
+DB_PATH = settings.table_states_db_uri
+logger.info(f"Using configured database path: {DB_PATH}")
 
 # Log the database path for debugging
 logger.info(f"Table states database path: {DB_PATH}")

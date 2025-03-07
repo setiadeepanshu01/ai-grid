@@ -905,14 +905,26 @@ export const useStore = create<Store>()(
             onBatchProgress: (results, batchIndex, totalBatches) => {
               console.log(`Processed batch ${batchIndex + 1}/${totalBatches}`);
               
-              // Process each result in the batch
-              const batchStart = batchIndex * useBatchSize;
-              results.forEach((result, resultIndex) => {
-                const queryIndex = batchStart + resultIndex;
-                if (queryIndex < queriesToRun.length) {
-                  processQueryResult(result, queriesToRun[queryIndex]);
-                }
-              });
+          // Process each result in the batch
+          const batchStart = batchIndex * useBatchSize;
+          
+          // Validate results is an array and has valid length
+          if (!Array.isArray(results)) {
+            console.error('Batch results is not an array:', results);
+            return;
+          }
+          
+          // Safely process each result
+          for (let resultIndex = 0; resultIndex < results.length; resultIndex++) {
+            const queryIndex = batchStart + resultIndex;
+            if (queryIndex < queriesToRun.length) {
+              try {
+                processQueryResult(results[resultIndex], queriesToRun[queryIndex]);
+              } catch (error) {
+                console.error(`Error processing result at index ${resultIndex}:`, error);
+              }
+            }
+          }
               
               // Update progress counter for the batch
               const currentTable = getTable(activeTableId);
