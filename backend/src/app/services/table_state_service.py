@@ -16,12 +16,11 @@ settings = get_settings()
 # Set up logging
 logger = logging.getLogger(__name__)
 
-# Define the data directory
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data")
-os.makedirs(DATA_DIR, exist_ok=True)
+# Get the database path from settings
+DB_PATH = settings.table_states_db_uri
 
-# SQLite database path
-DB_PATH = os.path.join(DATA_DIR, "table_states.db")
+# Ensure the directory exists
+os.makedirs(os.path.dirname(DB_PATH) if os.path.dirname(DB_PATH) else '.', exist_ok=True)
 
 # Initialize the database
 def init_db():

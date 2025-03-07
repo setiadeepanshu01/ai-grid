@@ -78,9 +78,10 @@ class Settings(BaseSettings):
     vector_db_provider: str = "milvus"
     index_name: str = "milvus"
 
-    # MILVUS CONFIG
+    # DATABASE CONFIG
     milvus_db_uri: str = "./milvus_db.db"
     milvus_db_token: str = "root:Milvus"
+    table_states_db_uri: str = "./table_states.db"
 
     # QDRANT CONFIG
     qdrant: Qdrant = Field(default_factory=lambda: Qdrant())
