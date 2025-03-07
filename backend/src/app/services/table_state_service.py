@@ -32,20 +32,40 @@ else:
 logger.info(f"Table states database path: {DB_PATH}")
 logger.info(f"Absolute database path: {os.path.abspath(DB_PATH)}")
 
-# Ensure the directory exists
+# Ensure the directory exists with proper permissions
 dir_path = os.path.dirname(DB_PATH) if os.path.dirname(DB_PATH) else '.'
-os.makedirs(dir_path, exist_ok=True)
-logger.info(f"Ensured directory exists: {dir_path}")
-
-# Check if we can write to the directory
 try:
+    # Create directory if it doesn't exist
+    os.makedirs(dir_path, exist_ok=True)
+    logger.info(f"Ensured directory exists: {dir_path}")
+    
+    # Try to set directory permissions (may fail if not running as root)
+    try:
+        os.chmod(dir_path, 0o777)
+        logger.info(f"Set permissions on directory: {dir_path}")
+    except Exception as e:
+        logger.warning(f"Could not set permissions on directory {dir_path}: {e}")
+    
+    # Create the database file if it doesn't exist
+    if not os.path.exists(DB_PATH):
+        open(DB_PATH, 'a').close()
+        logger.info(f"Created database file: {DB_PATH}")
+        
+        # Try to set file permissions
+        try:
+            os.chmod(DB_PATH, 0o666)
+            logger.info(f"Set permissions on database file: {DB_PATH}")
+        except Exception as e:
+            logger.warning(f"Could not set permissions on database file {DB_PATH}: {e}")
+    
+    # Check if we can write to the directory
     test_file_path = os.path.join(dir_path, '.write_test')
     with open(test_file_path, 'w') as f:
         f.write('test')
     os.remove(test_file_path)
     logger.info(f"Successfully verified write access to {dir_path}")
 except Exception as e:
-    logger.error(f"Cannot write to directory {dir_path}: {e}")
+    logger.error(f"Cannot create or access directory {dir_path}: {e}")
     logger.error(f"This will cause database operations to fail!")
 
 # Initialize the database

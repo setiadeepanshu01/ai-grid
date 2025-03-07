@@ -91,7 +91,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     fi
 
 # Create data directory and set permissions
-RUN mkdir -p /data && chown -R appuser:appuser /data
+RUN mkdir -p /data && chown -R appuser:appuser /data && chmod 777 /data
 
 # Change ownership of the app directory
 RUN chown -R appuser:appuser /usr/src/app
