@@ -59,12 +59,7 @@ class Settings(BaseSettings):
     # API CONFIG
     project_name: str = "AI Grid API"
     api_v1_str: str = "/api/v1"
-    backend_cors_origins: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "https://ai-grid.onrender.com",
-        "https://ai-grid-backend.onrender.com"
-    ]
+    backend_cors_origins: List[str] = ["*"]  # Allow all origins temporarily to troubleshoot CORS issues
 
     # LLM CONFIG
     dimensions: int = 1536
