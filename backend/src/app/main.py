@@ -27,7 +27,7 @@ app = FastAPI(
     redirect_slashes=False,  # Disable automatic redirects for trailing slashes
 )
 
-# Configure CORS with specific settings
+# Configure CORS with enhanced settings
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -37,14 +37,50 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:8000",
         "http://localhost:8001",
+        # Add wildcard as fallback
+        "*"
     ],
+    allow_origin_regex=r"https://(.*\.)?ai-grid\.onrender\.com",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With", 
-                  "Access-Control-Request-Method", "Access-Control-Request-Headers"],
-    expose_headers=["Content-Length", "Content-Range"],
-    max_age=600,  # Cache preflight requests for 10 minutes
+                  "Access-Control-Request-Method", "Access-Control-Request-Headers",
+                  "DNT", "If-Modified-Since", "Cache-Control", "Range"],
+    expose_headers=["Content-Length", "Content-Range", "Access-Control-Allow-Origin"],
+    max_age=1800,  # Cache preflight requests for 30 minutes (increased from 10)
 )
+
+# Add middleware to ensure CORS headers are always present
+class EnsureCORSMiddleware(BaseHTTPMiddleware):
+    """Middleware to ensure CORS headers are always present in responses."""
+    
+    async def dispatch(self, request: Request, call_next):
+        """Add CORS headers to all responses.
+        
+        Args:
+            request: The FastAPI request object.
+            call_next: The next middleware or endpoint handler.
+            
+        Returns:
+            Response: The response with CORS headers.
+        """
+        # Process the request and get the response
+        response = await call_next(request)
+        
+        # Ensure CORS headers are present
+        response.headers["Access-Control-Allow-Origin"] = request.headers.get("Origin", "*")
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        
+        # For preflight requests
+        if request.method == "OPTIONS":
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept, Origin, X-Requested-With, Access-Control-Request-Method, Access-Control-Request-Headers"
+            response.headers["Access-Control-Max-Age"] = "1800"
+        
+        return response
+
+# Add the CORS middleware
+app.add_middleware(EnsureCORSMiddleware)
 
 # Authentication middleware
 class AuthMiddleware(BaseHTTPMiddleware):

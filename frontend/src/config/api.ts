@@ -190,8 +190,8 @@ export const fetchDocumentPreview = async (documentId: string): Promise<string> 
  */
 const retryFetch = async (
   fetchFn: () => Promise<Response>,
-  retries = 3,
-  delay = 3000
+  retries = 5,  // Increased from 3 to 5
+  delay = 1000  // Decreased from 3000 to 1000 for faster initial retry
 ): Promise<Response> => {
   let lastError: any;
   let attempt = 0;
@@ -200,8 +200,8 @@ const retryFetch = async (
     try {
       const response = await fetchFn();
       
-      // For 502 Bad Gateway or 504 Gateway Timeout, retry
-      if ((response.status === 502 || response.status === 504) && attempt < retries) {
+      // For 502 Bad Gateway, 504 Gateway Timeout, or 503 Service Unavailable, retry
+      if ((response.status === 502 || response.status === 504 || response.status === 503) && attempt < retries) {
         console.log(`Received ${response.status} status, retrying (${retries - attempt} retries left) after ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         attempt++;
@@ -215,13 +215,15 @@ const retryFetch = async (
       return response;
     } catch (error) {
       lastError = error;
+      console.error('Fetch error:', error);
       
       // If it's a network error (TypeError) or CORS error, retry
-      const shouldRetry = 
+      // CORS errors typically manifest as TypeError with "Failed to fetch" message
+      const isCorsOrNetworkError = 
         error instanceof TypeError || // Network error
-        (error instanceof ApiError && (error.status === 502 || error.status === 504 || error.status === 0)); // Gateway errors or CORS
+        (error instanceof ApiError && (error.status === 502 || error.status === 504 || error.status === 503 || error.status === 0)); // Gateway errors or CORS
       
-      if (!shouldRetry || attempt >= retries) break;
+      if (!isCorsOrNetworkError || attempt >= retries) break;
       
       console.log(`Retrying fetch (${retries - attempt} retries left) after ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
@@ -231,6 +233,7 @@ const retryFetch = async (
   }
   
   // If we've exhausted all retries, throw the last error
+  console.error('All retry attempts failed:', lastError);
   throw lastError;
 };
 
@@ -244,7 +247,7 @@ export const runBatchQueries = async (
   } = {}
 ): Promise<any[]> => {
   const {
-    batchSize = 10,
+    batchSize = 5,  // Reduced from 10 to 5 for smaller batch sizes
     processIndividually = false,
     onBatchProgress,
     onQueryProgress
@@ -344,9 +347,9 @@ export const runBatchQueries = async (
     try {
       console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} queries`);
       
-      // Use fallback to individual queries if batch size is extremely large (more than 50 items)
-      // This is a safety fallback only for very large batches
-      if (batch.length > 50) {
+      // Use fallback to individual queries if batch size is large (more than 20 items)
+      // Reduced threshold from 50 to 20 to trigger individual processing more often
+      if (batch.length > 20) {
         console.log(`Large batch detected (${batch.length} items), processing individually`);
         
         // Process each query individually but in parallel
@@ -417,8 +420,12 @@ export const runBatchQueries = async (
           headers: getAuthHeaders(),
           credentials: 'include',
           body: JSON.stringify(batch.map(q => ({ document_id: q.document_id, prompt: q.prompt }))),
+          // Add mode: 'cors' explicitly
+          mode: 'cors',
+          // Add longer timeout
+          signal: AbortSignal.timeout(30000) // 30 second timeout
         }),
-        2, // 2 retries
+        3, // Increased from 2 to 3 retries
         1000 // 1 second initial delay
       );
       
@@ -431,13 +438,83 @@ export const runBatchQueries = async (
           // Try to parse as JSON for more detailed error info
           try {
             const errorJson = JSON.parse(errorText);
+            console.error("Parsed error JSON:", errorJson);
+            
+            // If we get a 502 Bad Gateway or other server error, fall back to individual processing
+            if (response.status >= 500) {
+              console.log(`Server error (${response.status}), falling back to individual processing for this batch`);
+              
+              // Process each query individually but in parallel
+              const individualResults = await Promise.allSettled(
+                batch.map(query => 
+                  retryFetch(() => fetch(API_ENDPOINTS.QUERY, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    credentials: 'include',
+                    mode: 'cors',
+                    body: JSON.stringify({ 
+                      document_id: query.document_id, 
+                      prompt: query.prompt 
+                    }),
+                  }))
+                  .then(resp => {
+                    if (!resp.ok) {
+                      console.warn(`Individual query failed: ${resp.status} ${resp.statusText}`);
+                      return null;
+                    }
+                    return resp.json();
+                  })
+                  .catch(err => {
+                    console.error('Error in individual query:', err);
+                    return null;
+                  })
+                )
+              );
+              
+              // Process results from individual queries
+              const batchResults = individualResults.map(result => 
+                result.status === 'fulfilled' && result.value ? result.value : null
+              );
+              
+              console.log(`Processed ${batchResults.filter(r => r !== null).length} of ${batch.length} queries individually`);
+              
+              // Map batch results to the correct positions in the final results array
+              for (let resultIndex = 0; resultIndex < batch.length; resultIndex++) {
+                try {
+                  const originalIndex = batch[resultIndex]._originalQuery.index;
+                  
+                  // Make sure the original index is within bounds
+                  if (originalIndex >= 0 && originalIndex < results.length && batchResults[resultIndex]) {
+                    results[originalIndex] = batchResults[resultIndex];
+                  }
+                } catch (error) {
+                  console.error(`Error mapping individual result at index ${resultIndex}:`, error);
+                }
+              }
+              
+              // Call batch progress callback if provided
+              if (onBatchProgress) {
+                try {
+                  const safeResults = batchResults.filter(r => r !== null);
+                  onBatchProgress(safeResults, batchIndex, batches.length);
+                } catch (error) {
+                  console.error("Error in batch progress callback:", error);
+                }
+              }
+              
+              // Skip the rest of the batch processing for this batch
+              continue;
+            }
+            
             throw new ApiError(`Batch query failed: ${errorJson.detail || response.statusText}`, response.status);
           } catch (jsonError) {
             // If JSON parsing fails, use the raw text
+            console.error("Error parsing error JSON:", jsonError);
             throw new ApiError(`Batch query failed: ${errorText || response.statusText}`, response.status);
           }
         } catch (textError) {
           // If we can't even get the response text, fall back to status text
+          console.error("Error getting error text:", textError);
           throw new ApiError(`Batch query failed: ${response.statusText}`, response.status);
         }
       }
