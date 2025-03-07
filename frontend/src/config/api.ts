@@ -55,7 +55,6 @@ export const uploadFile = async (file: File): Promise<any> => {
     const response = await fetch(API_ENDPOINTS.DOCUMENT_UPLOAD, {
       method: 'POST',
       body: formData,
-      mode: 'cors',
       credentials: 'include',
       headers: getUploadHeaders()
     });
@@ -84,7 +83,6 @@ export const uploadFiles = async (files: File[]): Promise<any> => {
     const response = await fetch(API_ENDPOINTS.BATCH_DOCUMENT_UPLOAD, {
       method: 'POST',
       body: formData,
-      mode: 'cors',
       credentials: 'include',
       headers: getUploadHeaders()
     });
@@ -115,7 +113,6 @@ export const runQuery = async (row: any, column: any, globalRules: any = []): Pr
     const response = await fetch(API_ENDPOINTS.QUERY, {
       method: 'POST',
       headers: getAuthHeaders(),
-      mode: 'cors',
       credentials: 'include',
       body: JSON.stringify({
         document_id: documentId,
@@ -152,7 +149,6 @@ export const fetchDocumentPreview = async (documentId: string): Promise<string> 
     const response = await fetch(API_ENDPOINTS.DOCUMENT_PREVIEW(documentId), {
       method: 'GET',
       headers: getAuthHeaders(),
-      mode: 'cors',
       credentials: 'include',
     });
     
@@ -197,25 +193,45 @@ const retryFetch = async (
   retries = 3,
   delay = 3000
 ): Promise<Response> => {
-  try {
-    return await fetchFn();
-  } catch (error) {
-    // Check if we should retry
-    if (retries <= 0) throw error;
-    
-    // If it's a network error or 502 Bad Gateway, retry
-    const shouldRetry = 
-      error instanceof TypeError || // Network error
-      (error instanceof ApiError && error.status === 502); // Bad Gateway
-    
-    if (!shouldRetry) throw error;
-    
-    // Wait before retrying
-    await new Promise(resolve => setTimeout(resolve, delay));
-    
-    // Retry with exponential backoff
-    return retryFetch(fetchFn, retries - 1, delay * 2);
+  let lastError: any;
+  let attempt = 0;
+  
+  while (attempt <= retries) {
+    try {
+      const response = await fetchFn();
+      
+      // For 502 Bad Gateway or 504 Gateway Timeout, retry
+      if ((response.status === 502 || response.status === 504) && attempt < retries) {
+        console.log(`Received ${response.status} status, retrying (${retries - attempt} retries left) after ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        attempt++;
+        delay *= 2; // Exponential backoff
+        continue;
+      }
+      
+      // For 404 Not Found on table state, we'll handle it at a higher level
+      // by trying to create the resource instead
+      
+      return response;
+    } catch (error) {
+      lastError = error;
+      
+      // If it's a network error (TypeError) or CORS error, retry
+      const shouldRetry = 
+        error instanceof TypeError || // Network error
+        (error instanceof ApiError && (error.status === 502 || error.status === 504 || error.status === 0)); // Gateway errors or CORS
+      
+      if (!shouldRetry || attempt >= retries) break;
+      
+      console.log(`Retrying fetch (${retries - attempt} retries left) after ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      attempt++;
+      delay *= 2; // Exponential backoff
+    }
   }
+  
+  // If we've exhausted all retries, throw the last error
+  throw lastError;
 };
 
 export const runBatchQueries = async (
@@ -267,7 +283,6 @@ export const runBatchQueries = async (
         () => fetch(API_ENDPOINTS.QUERY, {
           method: 'POST',
           headers: getAuthHeaders(),
-          mode: 'cors',
           credentials: 'include',
           body: JSON.stringify({
             document_id: query.document_id,
@@ -325,7 +340,6 @@ export const runBatchQueries = async (
         () => fetch(API_ENDPOINTS.BATCH_QUERY, {
           method: 'POST',
           headers: getAuthHeaders(),
-          mode: 'cors',
           credentials: 'include',
           body: JSON.stringify(batch.map(q => ({ document_id: q.document_id, prompt: q.prompt }))),
         }),
@@ -392,7 +406,7 @@ export const getAuthHeaders = () => {
   return {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    'Origin': 'https://ai-grid.onrender.com',
+    // Don't include Origin header as it can cause CORS issues
     ...(token ? { 'Authorization': `Bearer ${token}` } : {})
   };
 };
@@ -406,14 +420,13 @@ export const getUploadHeaders = () => {
   
   return {
     'Accept': 'application/json',
-    'Origin': 'https://ai-grid.onrender.com',
+    // Don't include Origin header as it can cause CORS issues
     ...(token ? { 'Authorization': `Bearer ${token}` } : {})
   };
 };
 // File upload headers
 export const UPLOAD_HEADERS = {
   'Accept': 'application/json',
-  'Origin': 'https://ai-grid.onrender.com',
 };
 // Request timeout in milliseconds
 export const REQUEST_TIMEOUT = 30000;

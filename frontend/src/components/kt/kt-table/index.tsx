@@ -20,7 +20,7 @@ import { useStore } from "@config/store";
 import { cn } from "@utils/functions";
 import classes from "./index.module.css";
 
-const PAGE_SIZES = [10, 25, 50, 100, 250, 500];
+const PAGE_SIZES = [10, 25, 50, 100];
 
 export function KtTable(props: BoxProps) {
   const table = useStore(store => store.getTable());

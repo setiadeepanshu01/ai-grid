@@ -35,27 +35,45 @@ const retryFetch = async (
   retries = 3,
   delay = 3000
 ): Promise<Response> => {
-  try {
-    return await fetchFn();
-  } catch (error) {
-    // Check if we should retry
-    if (retries <= 0) throw error;
-    
-    // If it's a network error or 502 Bad Gateway, retry
-    const shouldRetry = 
-      error instanceof TypeError || // Network error
-      (error instanceof ApiError && error.status === 502); // Bad Gateway
-    
-    if (!shouldRetry) throw error;
-    
-    console.log(`Retrying fetch (${retries} retries left) after ${delay}ms...`);
-    
-    // Wait before retrying
-    await new Promise(resolve => setTimeout(resolve, delay));
-    
-    // Retry with exponential backoff
-    return retryFetch(fetchFn, retries - 1, delay * 2);
+  let lastError: any;
+  let attempt = 0;
+  
+  while (attempt <= retries) {
+    try {
+      const response = await fetchFn();
+      
+      // For 502 Bad Gateway or 504 Gateway Timeout, retry
+      if ((response.status === 502 || response.status === 504) && attempt < retries) {
+        console.log(`Received ${response.status} status, retrying (${retries - attempt} retries left) after ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        attempt++;
+        delay *= 2; // Exponential backoff
+        continue;
+      }
+      
+      // For 404 Not Found, we'll handle it at a higher level
+      // by trying to create the resource instead
+      
+      return response;
+    } catch (error) {
+      lastError = error;
+      
+      // If it's a network error (TypeError) or CORS error, retry
+      const shouldRetry = 
+        error instanceof TypeError || // Network error
+        (error instanceof ApiError && (error.status === 502 || error.status === 504 || error.status === 0)); // Gateway errors or CORS
+      
+      if (!shouldRetry || attempt >= retries) break;
+      
+      console.log(`Retrying fetch (${retries - attempt} retries left) after ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      attempt++;
+      delay *= 2; // Exponential backoff
+    }
   }
+  
+  // If we've exhausted all retries, throw the last error
+  throw lastError;
 };
 
 /**
@@ -82,7 +100,6 @@ export async function saveTableState(tableId: string, tableName: string, tableDa
       () => fetch(`${API_ENDPOINTS.API_V1}/table-state/`, {
         method: 'POST',
         headers: headers,
-        mode: 'cors',
         credentials: 'include',
         body: JSON.stringify({
           id: tableId,
@@ -90,8 +107,8 @@ export async function saveTableState(tableId: string, tableName: string, tableDa
           data: tableData
         })
       }),
-      2, // 2 retries
-      1000 // 1 second initial delay
+      5, // Increased to 5 retries
+      3000 // Increased initial delay to 3 seconds
     );
     
     console.log('Save table state response:', response.status, response.statusText);
@@ -140,14 +157,13 @@ export async function updateTableState(tableId: string, tableData: any): Promise
       () => fetch(`${API_ENDPOINTS.API_V1}/table-state/${tableId}`, {
         method: 'PUT',
         headers: headers,
-        mode: 'cors',
         credentials: 'include',
         body: JSON.stringify({
           data: tableData
         })
       }),
-      2, // 2 retries
-      1000 // 1 second initial delay
+      5, // Increased to 5 retries
+      3000 // Increased initial delay to 3 seconds
     );
     
     console.log('Update table state response:', response.status, response.statusText);
@@ -186,12 +202,15 @@ export async function getTableState(tableId: string): Promise<TableState> {
       throw new TableStateError('Authentication required');
     }
     
-    const response = await fetch(`${API_ENDPOINTS.API_V1}/table-state/${tableId}`, {
-      method: 'GET',
-      headers: getAuthHeaders(),
-      mode: 'cors',
-      credentials: 'include'
-    });
+    const response = await retryFetch(
+      () => fetch(`${API_ENDPOINTS.API_V1}/table-state/${tableId}`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      }),
+      5, // 5 retries
+      3000 // 3 seconds initial delay
+    );
     
     if (!response.ok) {
       if (response.status === 404) {
@@ -232,11 +251,10 @@ export async function listTableStates(): Promise<TableStateListResponse> {
       () => fetch(`${API_ENDPOINTS.API_V1}/table-state/`, {
         method: 'GET',
         headers: headers,
-        mode: 'cors',
         credentials: 'include'
       }),
-      2, // 2 retries
-      1000 // 1 second initial delay
+      5, // Increased to 5 retries
+      3000 // Increased initial delay to 3 seconds
     );
     
     console.log('List table states response:', response.status, response.statusText);
@@ -274,12 +292,15 @@ export async function deleteTableState(tableId: string): Promise<void> {
       throw new TableStateError('Authentication required');
     }
     
-    const response = await fetch(`${API_ENDPOINTS.API_V1}/table-state/${tableId}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-      mode: 'cors',
-      credentials: 'include'
-    });
+    const response = await retryFetch(
+      () => fetch(`${API_ENDPOINTS.API_V1}/table-state/${tableId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      }),
+      5, // 5 retries
+      3000 // 3 seconds initial delay
+    );
     
     if (!response.ok) {
       const errorData = await response.json();

@@ -32,7 +32,6 @@ export const login = async (password: string): Promise<TokenResponse> => {
       method: 'POST',
       headers: DEFAULT_HEADERS,
       body: JSON.stringify({ password }),
-      mode: 'cors',
       credentials: 'include',
     });
     
@@ -66,7 +65,6 @@ export const verifyToken = async (token: string): Promise<{ isValid: boolean; se
         ...DEFAULT_HEADERS,
         'Authorization': `Bearer ${token}`
       },
-      mode: 'cors',
       credentials: 'include',
     });
     

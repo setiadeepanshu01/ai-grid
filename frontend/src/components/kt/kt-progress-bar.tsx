@@ -31,9 +31,12 @@ export function KtProgressBar() {
     // Only show notification if we were previously in progress and now we're complete
     if (wasInProgress === true && isNowComplete) {
       try {
+        // Make sure we don't show "0 requests" in the notification
+        const completedCount = requestProgress.completed > 0 ? requestProgress.completed : requestProgress.total;
+        
         notifications.show({
           title: 'Processing complete',
-          message: `Successfully processed all ${requestProgress.completed} requests.`,
+          message: `Successfully processed all ${completedCount} requests.`,
           color: 'green',
           autoClose: 5000
         });
@@ -41,7 +44,7 @@ export function KtProgressBar() {
         console.error('Error showing notification:', error);
       }
     }
-  }, [requestProgress?.inProgress, requestProgress?.completed]);
+  }, [requestProgress?.inProgress, requestProgress?.completed, requestProgress?.total]);
   
   // Don't render if no progress data or dismissed
   if (!requestProgress || dismissed) {
@@ -54,7 +57,10 @@ export function KtProgressBar() {
   }
   
   const total = requestProgress.total || 0;
-  const completed = requestProgress.completed || 0;
+  // Ensure completed is never displayed as 0 when processing is complete
+  const completed = !requestProgress.inProgress && requestProgress.completed === 0 && total > 0 
+    ? total 
+    : (requestProgress.completed || 0);
   const inProgress = requestProgress.inProgress || false;
   const error = requestProgress.error || false;
   const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;

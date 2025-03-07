@@ -62,7 +62,8 @@ class Settings(BaseSettings):
     backend_cors_origins: List[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
-        "https://ai-grid.onrender.com"
+        "https://ai-grid.onrender.com",
+        "https://ai-grid-backend.onrender.com"
     ]
 
     # LLM CONFIG
