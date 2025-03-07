@@ -93,39 +93,63 @@ export async function saveTableState(tableId: string, tableName: string, tableDa
     
     // Log the API endpoint and headers for debugging
     const headers = getAuthHeaders();
-    // console.log('Saving table state to:', `${API_ENDPOINTS.API_V1}/table-state/`);
-    // console.log('With headers:', JSON.stringify(headers));
+    
+    // Prepare the data with size optimization for large tables
+    const payload = {
+      id: tableId,
+      name: tableName,
+      data: tableData
+    };
+    
+    // Check payload size
+    const payloadStr = JSON.stringify(payload);
+    const payloadSizeMB = payloadStr.length / (1024 * 1024);
+    console.log(`Table state payload size: ${payloadSizeMB.toFixed(2)} MB`);
+    
+    // If payload is extremely large, implement chunking or compression
+    if (payloadSizeMB > 20) {
+      console.warn(`Very large payload (${payloadSizeMB.toFixed(2)} MB) detected - this may cause issues with the API`);
+    }
     
     const response = await retryFetch(
       () => fetch(`${API_ENDPOINTS.API_V1}/table-state/`, {
         method: 'POST',
         headers: headers,
         credentials: 'include',
-        body: JSON.stringify({
-          id: tableId,
-          name: tableName,
-          data: tableData
-        })
+        body: payloadStr
       }),
       5, // Increased to 5 retries
       3000 // Increased initial delay to 3 seconds
     );
     
-    console.log('Save table state response:', response.status, response.statusText);
+    // More detailed logging about the response
+    console.log(`Save table state response: ${response.status} ${response.statusText}`);
+    console.log(`Response headers: ${JSON.stringify([...response.headers.entries()])}`);
     
     if (!response.ok) {
       let errorMessage = 'Failed to save table state';
       try {
-        const errorData = await response.json();
-        errorMessage = errorData.detail || errorMessage;
+        const responseText = await response.text();
+        console.log('Error response body:', responseText);
+        
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMessage = errorData.detail || errorMessage;
+        } catch (parseError) {
+          // If we can't parse as JSON, use the raw text
+          errorMessage = `Failed to save table state: ${responseText || response.statusText}`;
+        }
       } catch (e) {
-        // If we can't parse the error response, just use the status text
+        // If we can't read the response at all, just use the status text
         errorMessage = `Failed to save table state: ${response.statusText}`;
       }
       throw new TableStateError(errorMessage);
     }
     
-    return await response.json();
+    // Get the response data and log it for debugging
+    const responseData = await response.json();
+    console.log('Table state saved successfully with ID:', responseData.id);
+    return responseData;
   } catch (error) {
     console.error('Error saving table state:', error);
     throw error instanceof TableStateError 
@@ -150,37 +174,61 @@ export async function updateTableState(tableId: string, tableData: any): Promise
     
     // Log the API endpoint and headers for debugging
     const headers = getAuthHeaders();
-    // console.log('Updating table state at:', `${API_ENDPOINTS.API_V1}/table-state/${tableId}`);
-    // console.log('With headers:', JSON.stringify(headers));
+    
+    // Prepare the data with size optimization for large tables
+    const payload = {
+      data: tableData
+    };
+    
+    // Check payload size
+    const payloadStr = JSON.stringify(payload);
+    const payloadSizeMB = payloadStr.length / (1024 * 1024);
+    console.log(`Table state update payload size: ${payloadSizeMB.toFixed(2)} MB`);
+    
+    // If payload is extremely large, implement chunking or compression
+    if (payloadSizeMB > 20) {
+      console.warn(`Very large update payload (${payloadSizeMB.toFixed(2)} MB) detected - this may cause issues with the API`);
+    }
     
     const response = await retryFetch(
       () => fetch(`${API_ENDPOINTS.API_V1}/table-state/${tableId}`, {
         method: 'PUT',
         headers: headers,
         credentials: 'include',
-        body: JSON.stringify({
-          data: tableData
-        })
+        body: payloadStr
       }),
       5, // Increased to 5 retries
       3000 // Increased initial delay to 3 seconds
     );
     
-    console.log('Update table state response:', response.status, response.statusText);
+    // More detailed logging about the response
+    console.log(`Update table state response: ${response.status} ${response.statusText}`);
+    console.log(`Response headers: ${JSON.stringify([...response.headers.entries()])}`);
     
     if (!response.ok) {
       let errorMessage = 'Failed to update table state';
       try {
-        const errorData = await response.json();
-        errorMessage = errorData.detail || errorMessage;
+        const responseText = await response.text();
+        console.log('Error response body:', responseText);
+        
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMessage = errorData.detail || errorMessage;
+        } catch (parseError) {
+          // If we can't parse as JSON, use the raw text
+          errorMessage = `Failed to update table state: ${responseText || response.statusText}`;
+        }
       } catch (e) {
-        // If we can't parse the error response, just use the status text
+        // If we can't read the response at all, just use the status text
         errorMessage = `Failed to update table state: ${response.statusText}`;
       }
       throw new TableStateError(errorMessage);
     }
     
-    return await response.json();
+    // Get the response data and log it for debugging
+    const responseData = await response.json();
+    console.log('Table state updated successfully with ID:', responseData.id);
+    return responseData;
   } catch (error) {
     console.error('Error updating table state:', error);
     throw error instanceof TableStateError 

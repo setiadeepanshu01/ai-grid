@@ -1,6 +1,7 @@
 """Dependencies for the application using FastAPI app state for singletons."""
 
 import logging
+from typing import Any, Callable, Type, TypeVar
 
 from fastapi import Depends, Request
 

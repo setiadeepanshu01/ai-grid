@@ -1,4 +1,4 @@
-type NotificationColor = 'blue' | 'green' | 'red' | 'yellow' | 'gray';
+type NotificationColor = 'blue' | 'green' | 'red' | 'yellow' | 'gray' | 'orange';
 
 interface NotificationProps {
   title?: string;

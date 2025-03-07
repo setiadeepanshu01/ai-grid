@@ -584,17 +584,26 @@ export const useStore = create<Store>()(
       },
 
       editCells: (cells, tableId = get().activeTableId) => {
-        const { getTable, editTable } = get();
+        const { getTable, editTable, saveTableState } = get();
         const valuesByRow = mapValues(
           groupBy(cells, c => c.rowId),
           c => c.map(c => [c.columnId, c.cell])
         );
+        
+        // Make the edits to the cells
         editTable(tableId, {
           rows: where(
             getTable(tableId).rows,
             r => valuesByRow[r.id],
             r => ({ cells: { ...r.cells, ...fromPairs(valuesByRow[r.id]) } })
           )
+        });
+        
+        // Explicitly trigger a save after cell edits
+        // This ensures changes are not lost, especially for manual edits
+        console.log('Cell edit detected, triggering immediate table state save');
+        saveTableState().catch(error => {
+          console.error('Failed to save after cell edit:', error);
         });
       },
 
@@ -873,10 +882,17 @@ export const useStore = create<Store>()(
             autoClose: 3000
           });
         }
+        // Verify we have queries to run
+        if (queriesToRun.length === 0) {
+          console.warn("No cells to rerun, aborting batch query operation");
+          return;
+        }
+        
         // Determine batch size based on number of queries
-        const useBatchSize = queriesToRun.length > 50 ? 15 : 
-                            queriesToRun.length > 20 ? 5 : 
-                            queriesToRun.length > 10 ? 3 : 0;
+        // With backend fix in place, we can use larger batch sizes
+        const useBatchSize = queriesToRun.length > 50 ? 20 : 
+                            queriesToRun.length > 20 ? 10 : 
+                            queriesToRun.length > 10 ? 5 : 2;
         
         // Use individual processing for small batches or batch processing for larger ones
         const useIndividualProcessing = queriesToRun.length <= 5;
@@ -916,11 +932,19 @@ export const useStore = create<Store>()(
               console.log(`Processed batch ${batchIndex + 1}/${totalBatches}`);
               
           // Process each result in the batch
-          const batchStart = batchIndex * useBatchSize;
+          // Validate useBatchSize is at least 1 to prevent division by zero
+          const safeBatchSize = Math.max(1, useBatchSize);
+          const batchStart = batchIndex * safeBatchSize;
           
           // Validate results is an array and has valid length
           if (!Array.isArray(results)) {
             console.error('Batch results is not an array:', results);
+            return;
+          }
+          
+          // Make sure we have results to process
+          if (results.length === 0) {
+            console.warn('Empty batch results array received');
             return;
           }
           
@@ -929,7 +953,12 @@ export const useStore = create<Store>()(
             const queryIndex = batchStart + resultIndex;
             if (queryIndex < queriesToRun.length) {
               try {
-                processQueryResult(results[resultIndex], queriesToRun[queryIndex]);
+                // Check that the result is valid before processing
+                if (results[resultIndex] !== undefined && results[resultIndex] !== null) {
+                  processQueryResult(results[resultIndex], queriesToRun[queryIndex]);
+                } else {
+                  console.warn(`Undefined or null result at index ${resultIndex}, skipping`);
+                }
               } catch (error) {
                 console.error(`Error processing result at index ${resultIndex}:`, error);
               }
@@ -937,19 +966,37 @@ export const useStore = create<Store>()(
           }
               
               // Update progress counter for the batch
-              const currentTable = getTable(activeTableId);
-              const currentProgress = currentTable.requestProgress || { total: queriesToRun.length, completed: 0, inProgress: true };
-              const completedCount = Math.min(
-                currentProgress.completed + results.length,
-                currentProgress.total
-              );
-              
-              editTable(activeTableId, {
-                requestProgress: {
-                  ...currentProgress,
-                  completed: completedCount
+              try {
+                const currentTable = getTable(activeTableId);
+                if (!currentTable) {
+                  console.warn('Table not found when updating progress counter');
+                  return;
                 }
-              });
+                
+                const currentProgress = currentTable.requestProgress || { 
+                  total: queriesToRun.length, 
+                  completed: 0, 
+                  inProgress: true 
+                };
+                
+                // Make sure results.length is a valid number
+                const validCompletedResults = Array.isArray(results) ? results.length : 0;
+                
+                const completedCount = Math.min(
+                  currentProgress.completed + validCompletedResults,
+                  currentProgress.total
+                );
+                
+                editTable(activeTableId, {
+                  requestProgress: {
+                    ...currentProgress,
+                    completed: completedCount
+                  }
+                });
+              } catch (error) {
+                console.error('Error updating batch progress:', error);
+                // Continue processing even if progress tracking fails
+              }
             }
           }
         ).then(() => {
@@ -974,6 +1021,9 @@ export const useStore = create<Store>()(
         }).catch((error: any) => {
           console.error('Error running batch queries:', error);
           
+          // Get access to saveTableState function
+          const { saveTableState } = get();
+          
           // Clear loading state for all remaining cells in the batch that haven't been processed
           const remainingLoadingCells = getTable(activeTableId).loadingCells;
           if (Object.keys(remainingLoadingCells).length > 0) {
@@ -983,37 +1033,68 @@ export const useStore = create<Store>()(
           }
           
           try {
-            // Mark progress as complete but with error - simple version
+            // Get the current table and progress state
+            const currentTable = getTable(activeTableId);
+            const currentProgress = currentTable.requestProgress || { 
+              total: queriesToRun.length, 
+              completed: 0, 
+              inProgress: true 
+            };
+            
+            // Mark progress as complete but with error, preserving any successful completions
             editTable(activeTableId, {
               requestProgress: {
                 total: queriesToRun.length,
-                completed: 0,
+                completed: currentProgress.completed, // Keep track of any successful completions
                 inProgress: false,
                 error: true
               }
             });
-          } catch (error) {
-            console.error('Error updating progress state on error:', error);
+            
+            // Show minimal notification about the failure
+            notifications.show({
+              title: 'Some queries failed',
+              message: `${currentProgress.completed} of ${queriesToRun.length} queries processed successfully`,
+              color: 'orange',
+              autoClose: 3000
+            });
+            
+            // Save current state to prevent data loss
+            if (saveTableState) {
+              saveTableState().catch(saveError => {
+                console.error('Failed to save after batch error:', saveError);
+              });
+            }
+          } catch (processError) {
+            console.error('Error updating progress state on error:', processError);
             // Continue even if progress tracking fails
           }
           
-          // Just log the error to console, don't show notifications to user
+          // Log detailed error information to console
           console.error('Batch query failed:', error instanceof Error ? error.message : 'Unknown error');
         });
       },
 
       clearCells: cells => {
-        const { getTable, editActiveTable } = get();
+        const { getTable, editActiveTable, saveTableState } = get();
         const columnsByRow = mapValues(
           groupBy(cells, c => c.rowId),
           c => c.map(c => c.columnId)
         );
+        
+        // Clear the cells
         editActiveTable({
           rows: where(
             getTable().rows,
             r => columnsByRow[r.id],
             r => ({ cells: omit(r.cells, columnsByRow[r.id]) })
           )
+        });
+        
+        // Explicitly save after clearing cells
+        console.log('Cells cleared, triggering immediate table state save');
+        saveTableState().catch(error => {
+          console.error('Failed to save after clearing cells:', error);
         });
       },
 
@@ -1117,6 +1198,7 @@ export const useStore = create<Store>()(
         
         // Only save if authenticated
         if (!auth.isAuthenticated || !auth.token) {
+          console.log('Not saving table state: User not authenticated');
           return Promise.resolve();
         }
         
@@ -1125,29 +1207,77 @@ export const useStore = create<Store>()(
           clearTimeout(_saveTableStateTimer);
         }
         
-        // Set a new timer to debounce the save operation (wait 2 seconds)
+        // Set a new timer with shorter delay (500ms instead of 2000ms)
         const timer = setTimeout(async () => {
+          console.log('Save timer triggered, preparing table state for saving...');
           try {
             const table = getTable(activeTableId);
+            if (!table) {
+              console.error('No active table found, cannot save');
+              return;
+            }
+            
+            // Debug info
+            console.log(`Saving table: ${table.id} with ${table.rows.length} rows and ${table.columns.length} columns`);
+            console.log(`Row cell counts: ${table.rows.slice(0, 3).map(r => Object.keys(r.cells).length).join(', ')}...`);
+            
+            // Check for large data payload
+            const estimatedSize = JSON.stringify(table).length;
+            const megabytes = estimatedSize / (1024 * 1024);
+            console.log(`Estimated payload size: ${megabytes.toFixed(2)} MB`);
+            
+            // Handle large tables by optimizing the saved data
+            let tableToSave = table;
+            if (table.rows.length > 1000 || megabytes > 10) {
+              console.log('Large table detected, optimizing data for storage');
+              
+              // Create optimized version with only essential data
+              // Start with a clean object and only copy what we need
+              tableToSave = {
+                // Core properties that must be preserved
+                id: table.id,
+                name: table.name,
+                columns: table.columns,
+                // Only include essential fields for rows to reduce size
+                rows: table.rows.map(row => ({
+                  id: row.id,
+                  hidden: row.hidden || false,
+                  cells: row.cells,
+                  sourceData: row.sourceData,
+                })),
+                globalRules: table.globalRules,
+                filters: table.filters,
+                // Required properties with minimal data
+                chunks: {},
+                openedChunks: [],
+                loadingCells: {},
+                uploadingFiles: false
+              };
+              
+              console.log('Table optimized for storage, removed temporary data');
+            }
             
             try {
-              // Try to update first without checking if it exists
-              // This is more efficient and avoids an extra API call
+              // Try direct update first (most common case)
               try {
-                await apiUpdateTableState(table.id, table);
-                console.log('Table state updated successfully');
+                console.log(`Attempting direct update for table ${table.id}`);
+                await apiUpdateTableState(table.id, tableToSave);
+                console.log('Table state update successful via direct PUT');
                 return;
               } catch (updateError) {
-                // If update fails with a 404, the table state doesn't exist yet
-                // In that case, try to create it
+                // If update fails, provide detailed error
+                console.warn(`Update error: ${updateError instanceof Error ? updateError.message : 'Unknown error'}`);
+                
+                // If it's a 404, create a new table state
                 if (updateError instanceof Error && updateError.message.includes('not found')) {
-                  await apiSaveTableState(table.id, table.name, table);
-                  console.log('Table state created successfully');
+                  console.log(`Table ${table.id} not found, creating new table state`);
+                  await apiSaveTableState(table.id, table.name, tableToSave);
+                  console.log('Table state created successfully via POST');
                   return;
                 }
                 
-                // For other errors, try the fallback approach
-                console.log('Update failed, trying fallback approach');
+                // For other errors, use the fallback with explicit existence check
+                console.log('Direct update failed, checking if table exists...');
                 
                 // Fallback: check if the table state exists by listing all table states
                 const response = await listTableStates();
@@ -1155,23 +1285,29 @@ export const useStore = create<Store>()(
                 
                 if (existingState) {
                   // If it exists, update it
-                  await apiUpdateTableState(table.id, table);
+                  console.log(`Table ${table.id} found in list, updating`);
+                  await apiUpdateTableState(table.id, tableToSave);
+                  console.log('Table state updated successfully via fallback PUT');
                 } else {
                   // If it doesn't exist, create a new one
-                  await apiSaveTableState(table.id, table.name, table);
+                  console.log(`Table ${table.id} not found in list, creating`);
+                  await apiSaveTableState(table.id, table.name, tableToSave);
+                  console.log('Table state created successfully via fallback POST');
                 }
               }
             } catch (apiError) {
-              // Log the error but don't reject the promise
-              console.error('Error saving table state to API:', apiError);
+              // Log the error with more details
+              console.error('API error saving table state:', apiError);
+              console.error('Error details:', apiError instanceof Error ? apiError.message : 'Unknown error');
             }
           } catch (error) {
             console.error('Error preparing table state for save:', error);
+            console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
           } finally {
             // Clear the timer reference
             set({ _saveTableStateTimer: null });
           }
-        }, 2000);
+        }, 500); // Reduced from 2000ms to 500ms for more responsive saving
         
         // Store the timer
         set({ _saveTableStateTimer: timer });

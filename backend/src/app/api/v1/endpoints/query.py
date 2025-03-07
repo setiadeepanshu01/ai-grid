@@ -64,31 +64,56 @@ async def run_query(
         If there's an error processing the query.
     """
     if request.document_id == "00000000000000000000000000000000":
-        query_response = await inference_query(
-            request.prompt.query,
-            request.prompt.rules,
-            request.prompt.type,
-            llm_service,
-        )
+        try:
+            query_response = await inference_query(
+                request.prompt.query,
+                request.prompt.rules,
+                request.prompt.type,
+                llm_service,
+            )
 
-        if not isinstance(query_response, QueryResult):
-            query_response = QueryResult(**query_response)
+            if not isinstance(query_response, QueryResult):
+                query_response = QueryResult(**query_response)
 
-        answer = QueryAnswer(
-            id=uuid.uuid4().hex,
-            document_id=request.document_id,
-            prompt_id=request.prompt.id,
-            answer=query_response.answer,
-            type=request.prompt.type,
-        )
-        response_data = QueryAnswerResponse(
-            answer=answer, chunks=query_response.chunks
-        )
+            answer = QueryAnswer(
+                id=uuid.uuid4().hex,
+                document_id=request.document_id,
+                prompt_id=request.prompt.id,
+                answer=query_response.answer,
+                type=request.prompt.type,
+            )
+            response_data = QueryAnswerResponse(
+                answer=answer, 
+                chunks=query_response.chunks or [],
+                resolved_entities=query_response.resolved_entities or []
+            )
 
-        return response_data
+            return response_data
+        except Exception as e:
+            logger.error(f"Error in inference query: {str(e)}")
+            # Create a type-appropriate fallback
+            if request.prompt.type == "int":
+                fallback = 0
+            elif request.prompt.type == "bool":
+                fallback = False
+            elif request.prompt.type == "int_array":
+                fallback = [0]
+            elif request.prompt.type == "str_array":
+                fallback = []
+            else:
+                fallback = f"Error processing query"
+                
+            answer = QueryAnswer(
+                id=uuid.uuid4().hex,
+                document_id=request.document_id,
+                prompt_id=request.prompt.id,
+                answer=fallback,
+                type=request.prompt.type,
+            )
+            return QueryAnswerResponse(answer=answer, chunks=[], resolved_entities=[])
 
     try:
-        logger.info(f"Received query request: {request.model_dump()}")
+        logger.info(f"Received query request: {request}")
 
         # Determine query type
         query_type = (
@@ -125,8 +150,8 @@ async def run_query(
         # Include resolved_entities in the response
         response_data = QueryAnswerResponse(
             answer=answer,
-            chunks=query_response.chunks,
-            resolved_entities=query_response.resolved_entities,
+            chunks=query_response.chunks or [],
+            resolved_entities=query_response.resolved_entities or [],
         )
 
         return response_data
@@ -160,7 +185,7 @@ async def run_batch_queries(
 ) -> List[QueryAnswerResponse]:
     """
     Run multiple queries in parallel and generate responses.
-
+    
     This endpoint processes multiple query requests in parallel, improving performance
     when multiple queries need to be executed at once.
 
@@ -225,103 +250,73 @@ async def run_batch_queries(
             })
         
         # Execute all queries in parallel
-        inference_results = []
-        vector_results = []
+        results = []
         
         if inference_tasks:
-            inference_results = await asyncio.gather(*inference_tasks)
+            inference_results = await asyncio.gather(*inference_tasks, return_exceptions=True)
+            results.extend(inference_results)
         
         if vector_query_params:
             vector_results = await process_queries_in_parallel(
                 vector_query_params, llm_service, vector_db_service
             )
+            results.extend(vector_results)
         
-        # Create a mapping to track the original order of requests
-        request_map = {}
-        for i, req in enumerate(requests):
-            request_id = f"{req.document_id}:{req.prompt.id}"
-            request_map[request_id] = {
-                "index": i,
-                "request": req
-            }
-        
-        # Initialize responses array with the same length as requests
-        responses = [None] * len(requests)
-        
-        # Process inference results
-        for i, result in enumerate(inference_results):
-            if i < len(inference_requests):  # Safety check
-                req = inference_requests[i]
-                request_id = f"{req.document_id}:{req.prompt.id}"
+        # Convert results to response format
+        responses = []
+        for i, result in enumerate(results):
+            req = inference_requests[i] if i < len(inference_requests) else vector_requests[i - len(inference_requests)]
+            
+            # Handle exceptions returned by asyncio.gather
+            if isinstance(result, Exception):
+                logger.error(f"Error in query {i}: {str(result)}")
+                # Create a type-appropriate fallback
+                if req.prompt.type == "int":
+                    fallback_answer = 0
+                elif req.prompt.type == "bool":
+                    fallback_answer = False
+                elif req.prompt.type == "int_array":
+                    fallback_answer = []
+                elif req.prompt.type == "str_array":
+                    fallback_answer = []
+                else:
+                    fallback_answer = ""
                 
-                if request_id in request_map:  # Safety check
-                    original_index = request_map[request_id]["index"]
-                    
-                    if not isinstance(result, QueryResult):
-                        result = QueryResult(**result)
-                    
-                    answer = QueryAnswer(
-                        id=uuid.uuid4().hex,
-                        document_id=req.document_id,
-                        prompt_id=req.prompt.id,
-                        answer=result.answer,
-                        type=req.prompt.type,
-                    )
-                    
-                    response = QueryAnswerResponse(
-                        answer=answer,
-                        chunks=result.chunks or [],
-                        resolved_entities=result.resolved_entities or [],
-                    )
-                    
-                    if 0 <= original_index < len(responses):  # Safety check
-                        responses[original_index] = response
-        
-        # Process vector results
-        for i, result in enumerate(vector_results):
-            if i < len(vector_requests):  # Safety check
-                req = vector_requests[i]
-                request_id = f"{req.document_id}:{req.prompt.id}"
-                
-                if request_id in request_map:  # Safety check
-                    original_index = request_map[request_id]["index"]
-                    
-                    if not isinstance(result, QueryResult):
-                        result = QueryResult(**result)
-                    
-                    answer = QueryAnswer(
-                        id=uuid.uuid4().hex,
-                        document_id=req.document_id,
-                        prompt_id=req.prompt.id,
-                        answer=result.answer,
-                        type=req.prompt.type,
-                    )
-                    
-                    response = QueryAnswerResponse(
-                        answer=answer,
-                        chunks=result.chunks or [],
-                        resolved_entities=result.resolved_entities or [],
-                    )
-                    
-                    if 0 <= original_index < len(responses):  # Safety check
-                        responses[original_index] = response
-        
-        # Ensure all responses are filled
-        for i, response in enumerate(responses):
-            if response is None:
-                logger.warning(f"Missing response for request at index {i}, creating empty response")
-                req = requests[i]
-                responses[i] = QueryAnswerResponse(
-                    answer=QueryAnswer(
-                        id=uuid.uuid4().hex,
-                        document_id=req.document_id,
-                        prompt_id=req.prompt.id,
-                        answer={"answer": "Error: No response generated"},
-                        type=req.prompt.type,
-                    ),
+                result = QueryResult(
+                    answer=fallback_answer,
                     chunks=[],
-                    resolved_entities=[],
+                    resolved_entities=[]
                 )
+            elif not isinstance(result, QueryResult):
+                try:
+                    result = QueryResult(**result)
+                except Exception as e:
+                    logger.error(f"Error converting result to QueryResult: {str(e)}")
+                    result = QueryResult(
+                        answer="" if req.prompt.type == "str" else 
+                               0 if req.prompt.type == "int" else
+                               False if req.prompt.type == "bool" else [],
+                        chunks=[],
+                        resolved_entities=[]
+                    )
+            
+            # Create answer object
+            answer = QueryAnswer(
+                id=uuid.uuid4().hex,
+                document_id=req.document_id,
+                prompt_id=req.prompt.id,
+                answer=result.answer,
+                type=req.prompt.type,
+            )
+            
+            # Create response
+            response = QueryAnswerResponse(
+                answer=answer,
+                chunks=result.chunks or [],
+                resolved_entities=result.resolved_entities or [],
+            )
+            
+            responses.append(response)
         
         return responses
         

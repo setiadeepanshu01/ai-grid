@@ -89,7 +89,7 @@ export function KtAutoPersistence() {
     if (isFirstLoad.current) return;
     
     // Check if there are actual changes by comparing with previous state
-    // We only compare the important parts that would trigger a save
+    // We include cell content in the check to detect cell content changes
     const currentState = {
       id: tableState.id,
       name: tableState.name,
@@ -106,35 +106,64 @@ export function KtAutoPersistence() {
         generate: c.generate,
         rules: c.rules
       }))),
-      rowsHash: JSON.stringify(tableState.rows.map(r => ({
-        id: r.id,
-        hidden: r.hidden,
-        // Only include the source data ID, not the full object
-        sourceDataId: r.sourceData?.type === 'document' ? r.sourceData.document.id : null,
-        // Count the cells instead of including all cell data
-        cellCount: Object.keys(r.cells).length
-      }))),
+      // Include a sample of cell content to detect changes in cell data
+      rowsHash: JSON.stringify(tableState.rows.length > 1000 ? 
+        // For large tables (>1000 rows), use sampling for better performance
+        (() => {
+          console.log(`Large table detected (${tableState.rows.length} rows), using sampling for change detection`);
+          // Sample rows: first 50 plus every 50th after that
+          const sampledRows = [
+            ...tableState.rows.slice(0, 50),
+            ...tableState.rows.slice(50).filter((_, i) => i % 50 === 0)
+          ];
+          return sampledRows.map(r => ({
+            id: r.id,
+            hidden: r.hidden,
+            sourceDataId: r.sourceData?.type === 'document' ? r.sourceData.document.id : null,
+            // Sample just 3 cells per row for large tables
+            cellSample: Object.keys(r.cells).slice(0, 3).map(key => ({ 
+              key, value: r.cells[key] 
+            })),
+            cellCount: Object.keys(r.cells).length
+          }));
+        })() 
+        : 
+        // For smaller tables, check more cells
+        tableState.rows.map(r => ({
+          id: r.id,
+          hidden: r.hidden,
+          sourceDataId: r.sourceData?.type === 'document' ? r.sourceData.document.id : null,
+          // Sample up to 10 cells per row for smaller tables
+          cellSample: Object.keys(r.cells).slice(0, 10).map(key => ({ 
+            key, value: r.cells[key] 
+          })),
+          cellCount: Object.keys(r.cells).length
+        }))
+      ),
       globalRulesHash: JSON.stringify(tableState.globalRules),
       filtersHash: JSON.stringify(tableState.filters)
     };
     
-    // Skip if there are no changes - use a fast string comparison first
-    if (prevTableStateRef.current && 
-        currentState.columnCount === prevTableStateRef.current.columnCount &&
-        currentState.rowCount === prevTableStateRef.current.rowCount &&
-        currentState.columnsHash === prevTableStateRef.current.columnsHash &&
-        currentState.rowsHash === prevTableStateRef.current.rowsHash &&
-        currentState.globalRulesHash === prevTableStateRef.current.globalRulesHash &&
-        currentState.filtersHash === prevTableStateRef.current.filtersHash) {
+    // Check for changes - we'll do a more relaxed check to ensure more frequent saves
+    const hasChanged = !prevTableStateRef.current || 
+                      currentState.columnCount !== prevTableStateRef.current.columnCount ||
+                      currentState.rowCount !== prevTableStateRef.current.rowCount ||
+                      currentState.columnsHash !== prevTableStateRef.current.columnsHash ||
+                      currentState.rowsHash !== prevTableStateRef.current.rowsHash ||
+                      currentState.globalRulesHash !== prevTableStateRef.current.globalRulesHash ||
+                      currentState.filtersHash !== prevTableStateRef.current.filtersHash;
+    
+    // Always update the previous state reference with a deep clone
+    prevTableStateRef.current = { ...currentState };
+    
+    // If nothing changed, return early
+    if (!hasChanged) {
       return;
     }
     
-    // Update the previous state reference with a deep clone to avoid reference issues
-    prevTableStateRef.current = { ...currentState };
-    
-    // Check if we've saved recently (minimum 10 seconds between saves)
+    // Reduce throttling time to more frequently save changes (3 seconds between saves)
     const currentTime = Date.now();
-    if (currentTime - lastSaveTimeRef.current < 10000) {
+    if (currentTime - lastSaveTimeRef.current < 3000) {
       return;
     }
     
@@ -143,16 +172,17 @@ export function KtAutoPersistence() {
       // Update the last save time
       lastSaveTimeRef.current = Date.now();
       
-      // Try to save to the backend without showing errors to the user
+      // Try to save to the backend with debug logging
+      console.log('Attempting to save table state after detecting changes');
       useStore.getState().saveTableState()
         .then(() => {
-          // No logs or notifications for normal operation
+          console.log('Table state saved successfully (auto-save)');
         })
         .catch((error) => {
-          // Just log the error without showing notifications
-          console.error('Error saving table state:', error);
+          // Log errors with more detail
+          console.error('Error in auto-saving table state:', error);
         });
-    }, 5000); // Save after 5 seconds of inactivity
+    }, 2000); // Reduced from 5 seconds to 2 seconds for more responsive saving
     
     debouncedSave();
     
