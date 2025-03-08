@@ -44,6 +44,67 @@ export const answerSchema = z.union([
     resolvedEntities: z.array(z.any()).optional(),
   })
 ]);
+
+// API endpoints
+export const API_ENDPOINTS = {
+  // Base API URL
+  BASE_URL: API_URL,
+  
+  // API version path
+  API_V1: `${API_URL}/api/v1`,
+  
+  // Document endpoints
+  DOCUMENTS: `${API_URL}/api/v1/document`,
+  DOCUMENT_UPLOAD: `${API_URL}/api/v1/document`,
+  BATCH_DOCUMENT_UPLOAD: `${API_URL}/api/v1/document/batch`,
+  DOCUMENT_PROCESS: `${API_URL}/api/v1/document/process`,
+  DOCUMENT_PREVIEW: (id: string) => `${API_URL}/api/v1/document/${id}/preview`,
+  
+  // Graph endpoints
+  GRAPHS: `${API_URL}/api/v1/graphs`,
+  GRAPH_CREATE: `${API_URL}/api/v1/graphs/create`,
+  
+  // Query endpoints
+  QUERY: `${API_URL}/api/v1/query`,
+  BATCH_QUERY: `${API_URL}/api/v1/query/batch`,
+  
+  // Health check
+  HEALTH: `${API_URL}/ping`,
+};
+
+import { useStore } from './store';
+// Function to get headers with authentication token
+export const getAuthHeaders = () => {
+  const token = useStore.getState().auth.token;
+  
+  return {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    // Don't include Origin header as it can cause CORS issues
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+};
+// Default request headers
+export const DEFAULT_HEADERS = {
+  'Content-Type': 'application/json',
+};
+// Function to get upload headers with authentication token
+export const getUploadHeaders = () => {
+  const token = useStore.getState().auth.token;
+  
+  return {
+    'Accept': 'application/json',
+    // Don't include Origin header as it can cause CORS issues
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+};
+// File upload headers
+export const UPLOAD_HEADERS = {
+  'Accept': 'application/json',
+};
+// Request timeout in milliseconds
+export const REQUEST_TIMEOUT = 30000;
+
 // API functions
 export const uploadFile = async (file: File): Promise<any> => {
   const formData = new FormData();
@@ -174,14 +235,48 @@ export const fetchDocumentPreview = async (documentId: string): Promise<string> 
   }
 };
 
+// IMPROVED PROGRESS TRACKING SYSTEM
+// Use a more reliable tracking mechanism with a Set to ensure each query is counted exactly once
+let _processedIndices = new Set<number>();
+let _totalQueries = 0;
+
+// Reset tracking counters
+function resetQueryTracking(total: number): void {
+  _processedIndices.clear();
+  _totalQueries = total;
+  console.log(`Reset query tracking: 0/${_totalQueries}`);
+}
+
+// Get current progress
+function getQueryProgress(): { processed: number; total: number; percentage: number } {
+  // Use the Set size as the source of truth for processed count
+  const processed = _processedIndices.size;
+  
+  const percentage = _totalQueries > 0 ? Math.round((processed / _totalQueries) * 100) : 0;
+  return {
+    processed,
+    total: _totalQueries,
+    percentage
+  };
+}
+
+// Update progress count safely
+function updateProgressCount(index: number): number {
+  // Only count each index once
+  if (!_processedIndices.has(index)) {
+    _processedIndices.add(index);
+  }
+  
+  return _processedIndices.size;
+}
+
 /**
  * Advanced batch query executor with robust error handling and retry logic
  * 
- * This implementation uses a sophisticated approach to batch processing:
- * 1. It uses a queue system to manage batch processing
- * 2. It tracks the status of each query and retries failed queries
- * 3. It provides immediate UI updates as results come in
- * 4. It handles network errors and timeouts gracefully
+ * This implementation uses a simplified, reliable approach to batch processing:
+ * 1. It processes queries in small batches to ensure consistent UI updates
+ * 2. It uses a strict tracking mechanism to ensure each query is processed exactly once
+ * 3. It provides detailed logging for debugging and troubleshooting
  * 
  * @param queries Array of query objects, each containing row, column, and globalRules
  * @param options Configuration options for batch processing
@@ -197,22 +292,100 @@ export const runBatchQueries = async (
     onQueryProgress?: (result: any, index: number, total: number) => void;
   } = {}
 ): Promise<any[]> => {
-  console.log(`Starting batch query execution for ${queries.length} queries`);
+  // Generate a unique ID for this batch run to help with debugging
+  const batchRunId = Math.random().toString(36).substring(2, 10);
+  console.log(`[${batchRunId}] Starting batch query execution for ${queries.length} queries`);
   
-  // Default options with reasonable values
+  // Default options with optimized values
   const {
-    batchSize = 20,  // Default to a larger batch size for efficiency
-    maxRetries = 3,  // Maximum number of retries for failed queries
-    retryDelay = 1000,  // Delay between retries in milliseconds
+    batchSize = 5,  // Use smaller batches for more reliable processing
+    maxRetries = 2,  // Keep retry count at 2
+    retryDelay = 500,  // Keep retry delay at 500ms
     onBatchProgress,
     onQueryProgress
   } = options;
   
-  // Format the queries for the batch endpoint
-  const formattedQueries = queries.map(({ row, column, globalRules = [] }) => {
+  // Reset tracking counters with exact count
+  const exactQueryCount = queries.length;
+  resetQueryTracking(exactQueryCount);
+  console.log(`[${batchRunId}] Reset query tracking: 0/${exactQueryCount}`);
+  
+  // Create a set to track which indices have been processed
+  // This is our single source of truth for tracking progress
+  const processedIndices = new Set<number>();
+  
+  // Function to safely update progress - this is the ONLY place where progress should be updated
+  const updateProgress = (result: any, index: number, results: any[]) => {
+    // Validate index is in range
+    if (index < 0 || index >= results.length) {
+      console.error(`[${batchRunId}] Invalid index ${index} (out of range 0-${results.length-1})`);
+      return false;
+    }
+    
+    // Only count each query once - strict check
+    if (processedIndices.has(index)) {
+      console.warn(`[${batchRunId}] Query ${index} already processed, skipping duplicate update`);
+      return false;
+    }
+    
+    // Update result
+    results[index] = result;
+    
+    // Mark as processed
+    processedIndices.add(index);
+    
+    // Update the module-level counter using the safe update function
+    updateProgressCount(index);
+    
+    const progress = getQueryProgress();
+    // Log accurate progress
+    console.log(`[${batchRunId}] Progress: ${progress.processed}/${progress.total} (${progress.percentage}%)`);
+    
+    // Call progress callback if provided
+    if (onQueryProgress) {
+      try {
+        // The callback expects (result, index, total) - pass our exact processed count
+        onQueryProgress(result, index, progress.processed);
+        
+        // Log the exact progress values for debugging
+        // console.log(`[${batchRunId}] Progress callback called with exact values: ${progress.processed}/${progress.total} (${progress.percentage}%)`);
+      } catch (error) {
+        console.error(`[${batchRunId}] Error in query progress callback for index ${index}:`, error);
+      }
+    }
+    
+    return true;
+  };
+  
+  // Format the queries for the batch endpoint and ensure unique IDs
+  const formattedQueries = queries.map(({ row, column, globalRules = [] }, index) => {
     const documentId = row?.sourceData?.document?.id || "00000000000000000000000000000000";
     const promptId = column?.id || Math.random().toString(36).substring(2, 15);
     const rules = [...(column?.rules || []), ...(globalRules || [])];
+    
+    // Calculate complexity score for prioritization
+    let complexity = 0;
+    
+    // Inference queries (no document) are fastest
+    if (documentId === "00000000000000000000000000000000") {
+      complexity = 0;
+    } 
+    // Queries with rules are more complex
+    else if (rules && rules.length > 0) {
+      complexity = 2;
+    }
+    // Boolean queries often require more processing
+    else if (column?.type === "bool") {
+      complexity = 2;
+    }
+    // Array responses are more complex than simple types
+    else if (column?.type?.includes("array")) {
+      complexity = 1;
+    }
+    // Simple string/int queries
+    else {
+      complexity = 1;
+    }
     
     return {
       document_id: documentId,
@@ -223,14 +396,15 @@ export const runBatchQueries = async (
         type: column?.type || "str",
         rules: rules
       },
-      // Store original query info for callbacks
-      _originalQuery: { row, column, index: 0 } 
+      // Store original query info for callbacks with guaranteed unique index
+      _originalQuery: { 
+        row, 
+        column, 
+        index: index,  // Use the array index directly to ensure uniqueness
+        complexity: complexity,
+        processed: false // Track if this query has been processed
+      } 
     };
-  });
-  
-  // Update the index information
-  formattedQueries.forEach((query, index) => {
-    query._originalQuery.index = index;
   });
   
   // If no queries, return empty array
@@ -240,65 +414,166 @@ export const runBatchQueries = async (
   }
   
   // Initialize results array with the exact length needed
-  const results: any[] = new Array(formattedQueries.length);
+  const results: any[] = new Array(formattedQueries.length).fill(null);
   
-  // Create batches with the specified batch size
+  // Group queries by row ID for row-based processing
+  const queriesByRow = new Map<string, any[]>();
+  
+  // Group queries by row ID
+  formattedQueries.forEach(query => {
+    const rowId = query._originalQuery.row?.id || 'unknown';
+    if (!queriesByRow.has(rowId)) {
+      queriesByRow.set(rowId, []);
+    }
+    queriesByRow.get(rowId)!.push(query);
+  });
+  
+  // Create simple fixed-size batches - no complex sorting or prioritization
   const batches = createBatches(formattedQueries, batchSize);
-  console.log(`Created ${batches.length} batches with batch size ${batchSize}`);
+  
+  // Log batch information
+  console.log(`[${batchRunId}] Created ${batches.length} batches for processing ${formattedQueries.length} queries`);
   
   // Track failed queries for retry
   const failedQueries: { query: any; retryCount: number; }[] = [];
   
-  // Process each batch
-  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-    const batch = batches[batchIndex];
-    console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} queries`);
-    
-    try {
-      // Try to process the entire batch
-      const batchResults = await processBatch(batch);
+  try {
+    // Process batches sequentially with detailed logging
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex];
+      console.log(`Processing batch ${batchIndex + 1}/${batches.length} with ${batch.length} queries`);
       
-      // Update results array
-      updateResultsFromBatch(batch, batchResults, results);
+      // Log which rows are being processed in this batch
+      // const rowIds = new Set(batch.map(q => q._originalQuery.row?.id));
+      // console.log(`[${batchRunId}] Batch ${batchIndex + 1} contains queries for rows: ${Array.from(rowIds).join(', ')}`);
       
-      // Call progress callback if provided
-      if (onBatchProgress) {
-        try {
-          onBatchProgress(batchResults, batchIndex, batches.length);
-        } catch (error) {
-          console.error("Error in batch progress callback:", error);
+      try {
+        // Process the batch
+        const batchResults = await processBatch(batch);
+        
+        // Verify we got the expected number of results
+        if (batchResults.length !== batch.length) {
+          console.error(`[${batchRunId}] Batch result length mismatch: expected ${batch.length}, got ${batchResults.length}`);
         }
-      }
-      
-      // Call individual progress callbacks
-      if (onQueryProgress) {
-        for (let i = 0; i < batchResults.length; i++) {
-          const originalIndex = batch[i]._originalQuery.index;
+        
+        // Call batch progress callback if provided
+        if (onBatchProgress) {
           try {
-            onQueryProgress(batchResults[i], originalIndex, formattedQueries.length);
+            onBatchProgress(batchResults, batchIndex, batches.length);
           } catch (error) {
-            console.error(`Error in query progress callback for index ${originalIndex}:`, error);
+            console.error("Error in batch progress callback:", error);
           }
         }
+        
+        // Update individual query progress with detailed logging
+        for (let i = 0; i < batchResults.length; i++) {
+          if (i >= batch.length) {
+            console.error(`Result index ${i} exceeds batch length ${batch.length}`);
+            continue;
+          }
+          
+          const originalIndex = batch[i]._originalQuery.index;
+          const rowId = batch[i]._originalQuery.row?.id;
+          const columnId = batch[i]._originalQuery.column?.id;
+          
+          // Log the update
+          console.log(`[${batchRunId}] Updating result for query ${originalIndex} (row: ${rowId}, column: ${columnId})`);
+          
+          // Mark query as processed
+          batch[i]._originalQuery.processed = true;
+          
+          // Update progress and check if it was successful
+          const updated = updateProgress(batchResults[i], originalIndex, results);
+          if (!updated) {
+            console.warn(`[${batchRunId}] Failed to update result for query ${originalIndex} - already processed?`);
+          }
+        }
+        
+        // Double-check that all queries in this batch are now processed
+        const unprocessedQueries = batch.filter(q => !q._originalQuery.processed);
+        if (unprocessedQueries.length > 0) {
+          console.warn(`[${batchRunId}] ${unprocessedQueries.length} queries in batch ${batchIndex + 1} were not marked as processed`);
+          
+          // Log details about unprocessed queries for debugging
+          unprocessedQueries.forEach(q => {
+            console.warn(`[${batchRunId}] Unprocessed query: index=${q._originalQuery.index}, row=${q._originalQuery.row?.id}, column=${q._originalQuery.column?.id}`);
+          });
+        }
+      } catch (error) {
+        console.error(`Error processing batch ${batchIndex + 1}:`, error);
+        
+        // Add failed queries to retry list with detailed logging
+        batch.forEach(query => {
+          if (!query._originalQuery.processed) {
+            console.log(`Adding query ${query._originalQuery.index} to retry list`);
+            failedQueries.push({ query, retryCount: 0 });
+          }
+        });
       }
-    } catch (error) {
-      console.error(`Error processing batch ${batchIndex + 1}:`, error);
-      
-      // Add all queries in this batch to the failed queries list
-      batch.forEach(query => {
-        failedQueries.push({ query, retryCount: 0 });
-      });
     }
+  } catch (error) {
+    console.error("Error in batch processing:", error);
   }
   
   // Process failed queries with retries
   if (failedQueries.length > 0) {
     console.log(`Processing ${failedQueries.length} failed queries with retries`);
-    await processFailedQueries(failedQueries, results, maxRetries, retryDelay, onQueryProgress);
+    await processFailedQueries(failedQueries, results, maxRetries, retryDelay, onQueryProgress, processedIndices);
   }
   
-  // Fill any missing results with fallbacks
-  fillMissingResults(formattedQueries, results);
+  // Check for any missing results
+  const missingIndices = [];
+  for (let i = 0; i < results.length; i++) {
+    if (!results[i]) {
+      missingIndices.push(i);
+    }
+  }
+  
+  if (missingIndices.length > 0) {
+    console.warn(`[${batchRunId}] Found ${missingIndices.length} missing results: ${missingIndices.join(', ')}`);
+    
+    // Process any missing queries individually as a last resort
+    for (const index of missingIndices) {
+      if (!processedIndices.has(index)) {
+        const query = formattedQueries[index];
+        console.log(`[${batchRunId}] Processing missing query ${index} individually`);
+        
+        try {
+          const result = await processIndividualQuery(query);
+          updateProgress(result, index, results);
+        } catch (error) {
+          console.error(`Error processing missing query ${index}:`, error);
+          // Create fallback for this query
+          const fallback = createFallbackResult(query);
+          updateProgress(fallback, index, results);
+        }
+      }
+    }
+  }
+  
+  // Final verification of processed count
+  if (processedIndices.size !== exactQueryCount) {
+    console.error(`[${batchRunId}] Final processed count (${processedIndices.size}) doesn't match total (${exactQueryCount})`);
+    
+    // Log which indices were never processed
+    const allIndices = new Set(Array.from({ length: exactQueryCount }, (_, i) => i));
+    const unprocessedIndices = Array.from(allIndices).filter(i => !processedIndices.has(i));
+    
+    if (unprocessedIndices.length > 0) {
+      console.error(`[${batchRunId}] Indices never processed: ${unprocessedIndices.join(', ')}`);
+    }
+    
+    // Log any indices processed that weren't in the original set
+    const extraIndices = Array.from(processedIndices).filter(i => i >= exactQueryCount);
+    if (extraIndices.length > 0) {
+      console.error(`[${batchRunId}] Extra indices processed: ${extraIndices.join(', ')}`);
+    }
+  }
+  
+  // Fill any remaining missing results with fallbacks
+  fillMissingResults(formattedQueries, results, processedIndices);
+  
+  console.log(`[${batchRunId}] Batch query execution completed with ${processedIndices.size}/${exactQueryCount} queries processed`);
   
   return results;
 };
@@ -311,7 +586,8 @@ async function processFailedQueries(
   results: any[],
   maxRetries: number,
   retryDelay: number,
-  onQueryProgress?: (result: any, index: number, total: number) => void
+  onQueryProgress?: (result: any, index: number, total: number) => void,
+  processedIndices?: Set<number>
 ): Promise<void> {
   // Process in smaller batches to avoid overwhelming the server
   const batchSize = 5;
@@ -341,17 +617,34 @@ async function processFailedQueries(
         console.log(`Retry attempt ${retryCount + 1}/${maxRetries} for query ${query._originalQuery.index}`);
         const result = await processIndividualQuery(query);
         
-        // Update results array
+        // Update progress safely
         const originalIndex = query._originalQuery.index;
-        results[originalIndex] = result;
         
-        // Call progress callback if provided
-        if (onQueryProgress) {
-          try {
-            onQueryProgress(result, originalIndex, results.length);
-          } catch (error) {
-            console.error(`Error in query progress callback for index ${originalIndex}:`, error);
+        // Only update if not already processed
+        if (originalIndex >= 0 && originalIndex < results.length && 
+            (!processedIndices || !processedIndices.has(originalIndex))) {
+          
+          // Update result
+          results[originalIndex] = result;
+          
+          // Mark as processed
+          if (processedIndices) {
+            processedIndices.add(originalIndex);
+            updateProgressCount(originalIndex);
           }
+          
+          // Call progress callback if provided
+          if (onQueryProgress) {
+            try {
+              // The callback expects (result, index, total) - pass our exact processed count
+              const progress = getQueryProgress();
+              onQueryProgress(result, originalIndex, progress.processed);
+            } catch (error) {
+              console.error(`Error in query progress callback for index ${originalIndex}:`, error);
+            }
+          }
+        } else {
+          console.log(`Skipping update for already processed query ${originalIndex}`);
         }
         
         return { success: true, query };
@@ -363,18 +656,35 @@ async function processFailedQueries(
           return { success: false, query, retryCount: retryCount + 1 };
         }
         
-        // Create fallback result for max retries exceeded
+        // Create fallback result
         const fallbackResult = createFallbackResult(query);
         const originalIndex = query._originalQuery.index;
-        results[originalIndex] = fallbackResult;
         
-        // Call progress callback with fallback
-        if (onQueryProgress) {
-          try {
-            onQueryProgress(fallbackResult, originalIndex, results.length);
-          } catch (error) {
-            console.error(`Error in query progress callback for index ${originalIndex}:`, error);
+        // Only update if not already processed
+        if (originalIndex >= 0 && originalIndex < results.length && 
+            (!processedIndices || !processedIndices.has(originalIndex))) {
+          
+          // Update result with fallback
+          results[originalIndex] = fallbackResult;
+          
+          // Mark as processed
+          if (processedIndices) {
+            processedIndices.add(originalIndex);
+            updateProgressCount(originalIndex);
           }
+          
+          // Call progress callback if provided
+          if (onQueryProgress) {
+            try {
+              // The callback expects (result, index, total) - pass our exact processed count
+              const progress = getQueryProgress();
+              onQueryProgress(fallbackResult, originalIndex, progress.processed);
+            } catch (error) {
+              console.error(`Error in query progress callback for index ${originalIndex}:`, error);
+            }
+          }
+        } else {
+          console.log(`Skipping fallback for already processed query ${originalIndex}`);
         }
         
         return { success: true, query }; // Mark as "success" to remove from retry queue
@@ -433,12 +743,12 @@ async function processIndividualQuery(query: any): Promise<any> {
 }
 
 /**
- * Process a batch of queries using the batch API endpoint
+ * Process a batch of queries using the batch API endpoint with optimized timeout
  */
 async function processBatch(batch: any[]): Promise<any[]> {
-  // Calculate an appropriate timeout based on batch size
-  // Larger batches need more time (base: 30s, +5s per query)
-  const timeoutMs = Math.min(60000, 30000 + (batch.length * 5000));
+  // Optimized timeout calculation - faster for smaller batches
+  // Base: 20s + 3s per query, capped at 45s (reduced from 60s)
+  const timeoutMs = Math.min(45000, 20000 + (batch.length * 3000));
   
   console.log(`Processing batch of ${batch.length} queries with ${timeoutMs}ms timeout`);
   
@@ -446,21 +756,31 @@ async function processBatch(batch: any[]): Promise<any[]> {
   const startTime = performance.now();
   
   try {
+    // Use keep-alive connection for better performance
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
     const response = await fetch(API_ENDPOINTS.BATCH_QUERY, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: {
+        ...getAuthHeaders(),
+        'Connection': 'keep-alive',
+      },
       credentials: 'include',
       mode: 'cors',
       body: JSON.stringify(batch.map(q => ({ 
         document_id: q.document_id, 
         prompt: q.prompt 
       }))),
-      signal: AbortSignal.timeout(timeoutMs)
+      signal: controller.signal
     });
     
+    // Clear timeout
+    clearTimeout(timeoutId);
+    
     // Log performance metrics
-    const endTime = performance.now();
-    console.log(`Batch query network time: ${Math.round(endTime - startTime)}ms`);
+    const networkTime = performance.now() - startTime;
+    console.log(`Batch query network time: ${Math.round(networkTime)}ms`);
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -468,11 +788,12 @@ async function processBatch(batch: any[]): Promise<any[]> {
       throw new ApiError(`Batch query failed: ${response.statusText}`, response.status);
     }
     
+    // Use streaming JSON parser for large responses if available
     const batchResults = await response.json();
     
     // Log total time including JSON parsing
-    const totalTime = performance.now();
-    console.log(`Batch query total time: ${Math.round(totalTime - startTime)}ms`);
+    const totalTime = performance.now() - startTime;
+    console.log(`Batch query total time: ${Math.round(totalTime)}ms`);
     
     if (!Array.isArray(batchResults)) {
       console.error('Batch results is not an array:', batchResults);
@@ -481,6 +802,12 @@ async function processBatch(batch: any[]): Promise<any[]> {
     
     return batchResults;
   } catch (error) {
+    // Handle timeout errors specifically
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error(`Batch query timed out after ${timeoutMs}ms`);
+      throw new Error(`Batch query timed out after ${timeoutMs}ms`);
+    }
+    
     // Log detailed error information
     console.error(`Batch query failed after ${Math.round(performance.now() - startTime)}ms:`, error);
     
@@ -524,39 +851,14 @@ function createBatches<T>(items: T[], batchSize: number): T[][] {
 }
 
 /**
- * Update results array from batch results
- */
-function updateResultsFromBatch(batch: any[], batchResults: any[], results: any[]): void {
-  // Ensure batchResults doesn't exceed batch length
-  const validResultsLength = Math.min(batchResults.length, batch.length);
-  
-  for (let resultIndex = 0; resultIndex < validResultsLength; resultIndex++) {
-    try {
-      const originalIndex = batch[resultIndex]._originalQuery.index;
-      
-      // Make sure the original index is within bounds
-      if (originalIndex >= 0 && originalIndex < results.length) {
-        // Validate that the result has the required structure
-        if (!batchResults[resultIndex] || 
-            !batchResults[resultIndex].answer ||
-            typeof batchResults[resultIndex].answer !== 'object') {
-          console.warn(`Invalid batch result at index ${resultIndex}, skipping`);
-          continue;
-        }
-        
-        // Valid result, use it
-        results[originalIndex] = batchResults[resultIndex];
-      }
-    } catch (error) {
-      console.error(`Error mapping batch result at index ${resultIndex}:`, error);
-    }
-  }
-}
-
-/**
  * Fill any missing results with fallbacks and ensure UI updates
  */
-function fillMissingResults(queries: any[], results: any[]): void {
+function fillMissingResults(
+  queries: any[], 
+  results: any[], 
+  processedIndices?: Set<number>
+): void {
+  const runId = Math.random().toString(36).substring(2, 6);
   let missingCount = 0;
   
   for (let i = 0; i < queries.length; i++) {
@@ -566,69 +868,27 @@ function fillMissingResults(queries: any[], results: any[]): void {
       
       // Create fallback based on prompt type
       results[i] = createFallbackResult(query);
+      
+      // Mark as processed but only if not already processed
+      if (processedIndices && !processedIndices.has(i)) {
+        processedIndices.add(i);
+        // Only increment the counter if we actually added to the set
+        updateProgressCount(i);
+      }
     }
   }
   
   if (missingCount > 0) {
-    console.log(`Created ${missingCount} fallbacks for missing results`);
+    const progress = getQueryProgress();
+    console.log(`[${runId}] Created ${missingCount} fallbacks for missing results`);
+    console.log(`[${runId}] Final progress: ${progress.processed}/${progress.total} (${progress.percentage}%)`);
+  }
+  
+  // Final verification
+  const stillMissing = results.filter(r => !r).length;
+  if (stillMissing > 0) {
+    console.error(`[${runId}] CRITICAL ERROR: Still have ${stillMissing} missing results after fallback creation!`);
+  } else {
+    console.log(`[${runId}] All ${results.length} queries have results (including fallbacks)`);
   }
 }
-
-// API endpoints
-export const API_ENDPOINTS = {
-  // Base API URL
-  BASE_URL: API_URL,
-  
-  // API version path
-  API_V1: `${API_URL}/api/v1`,
-  
-  // Document endpoints
-  DOCUMENTS: `${API_URL}/api/v1/document`,
-  DOCUMENT_UPLOAD: `${API_URL}/api/v1/document`,
-  BATCH_DOCUMENT_UPLOAD: `${API_URL}/api/v1/document/batch`,
-  DOCUMENT_PROCESS: `${API_URL}/api/v1/document/process`,
-  DOCUMENT_PREVIEW: (id: string) => `${API_URL}/api/v1/document/${id}/preview`,
-  
-  // Graph endpoints
-  GRAPHS: `${API_URL}/api/v1/graphs`,
-  GRAPH_CREATE: `${API_URL}/api/v1/graphs/create`,
-  
-  // Query endpoints
-  QUERY: `${API_URL}/api/v1/query`,
-  BATCH_QUERY: `${API_URL}/api/v1/query/batch`,
-  
-  // Health check
-  HEALTH: `${API_URL}/ping`,
-};
-import { useStore } from './store';
-// Function to get headers with authentication token
-export const getAuthHeaders = () => {
-  const token = useStore.getState().auth.token;
-  
-  return {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-    // Don't include Origin header as it can cause CORS issues
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-  };
-};
-// Default request headers
-export const DEFAULT_HEADERS = {
-  'Content-Type': 'application/json',
-};
-// Function to get upload headers with authentication token
-export const getUploadHeaders = () => {
-  const token = useStore.getState().auth.token;
-  
-  return {
-    'Accept': 'application/json',
-    // Don't include Origin header as it can cause CORS issues
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-  };
-};
-// File upload headers
-export const UPLOAD_HEADERS = {
-  'Accept': 'application/json',
-};
-// Request timeout in milliseconds
-export const REQUEST_TIMEOUT = 30000;

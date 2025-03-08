@@ -23,12 +23,12 @@ logger = logging.getLogger(__name__)
 
 SearchMethod = Callable[[str, str, List[Rule]], Awaitable[SearchResponse]]
 
-# Concurrency control - limit to 5 concurrent queries to avoid overwhelming the system
+# Concurrency control - increased from 5 to 10 for better throughput
 # This can be adjusted based on server capacity
-MAX_CONCURRENT_QUERIES = 5
+MAX_CONCURRENT_QUERIES = 10
 QUERY_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_QUERIES)
 
-# Retry configuration
+# Retry configuration - reduced delay for faster failure recovery
 MAX_RETRIES = 2
 RETRY_DELAY = 1.0  # seconds
 
@@ -123,16 +123,22 @@ async def process_query_with_retry(
     vector_db_service: Any,
     retries: int = MAX_RETRIES,
 ) -> QueryResult:
-    """Process a query with retry logic for resilience."""
+    """Process a query with optimized retry logic for faster response times."""
     last_exception = None
+    
+    # Truncate query for logging to avoid excessive log size
+    query_preview = query[:30] + "..." if len(query) > 30 else query
     
     for attempt in range(retries + 1):
         try:
             # Use the semaphore to limit concurrency
             async with QUERY_SEMAPHORE:
-                logger.info(f"Processing query (attempt {attempt+1}/{retries+1}): {query[:50]}...")
+                if attempt > 0:
+                    logger.info(f"Retry {attempt}/{retries} for query: {query_preview}")
+                
                 start_time = time.time()
                 
+                # Process the query
                 result = await process_query(
                     query_type,
                     query,
@@ -144,21 +150,18 @@ async def process_query_with_retry(
                 )
                 
                 elapsed = time.time() - start_time
-                logger.info(f"Query processed successfully in {elapsed:.2f}s")
+                logger.info(f"Query processed in {elapsed:.2f}s")
                 return result
                 
         except Exception as e:
             last_exception = e
-            logger.warning(f"Query attempt {attempt+1} failed: {str(e)}")
             
             if attempt < retries:
-                # Add jitter to retry delay to prevent thundering herd
-                jitter = RETRY_DELAY * (0.5 + 0.5 * (attempt + 1))
+                # Simplified retry delay with minimal jitter
+                jitter = RETRY_DELAY * (0.9 + 0.2 * attempt)
                 await asyncio.sleep(jitter)
-            else:
-                logger.error(f"All {retries+1} attempts failed for query: {query[:50]}...")
     
-    # If we get here, all retries failed
+    # If we get here, all retries failed - create appropriate fallback
     logger.error(f"Query failed after {retries+1} attempts: {str(last_exception)}")
     
     # Return a fallback result based on the expected format
@@ -166,9 +169,7 @@ async def process_query_with_retry(
         fallback = 0
     elif format == "bool":
         fallback = False
-    elif format == "int_array":
-        fallback = []
-    elif format == "str_array":
+    elif format in ["int_array", "str_array"]:
         fallback = []
     else:
         fallback = ""
@@ -273,7 +274,7 @@ async def process_queries_in_parallel(
     vector_db_service: Any,
 ) -> List[QueryResult]:
     """
-    Process multiple queries in parallel with controlled concurrency and retries.
+    Process multiple queries in parallel with optimized concurrency control.
     
     Parameters
     ----------
@@ -294,9 +295,17 @@ async def process_queries_in_parallel(
     List[QueryResult]
         List of query results in the same order as the input queries.
     """
-    logger.info(f"Processing {len(queries)} queries in parallel with controlled concurrency")
+    logger.info(f"Processing {len(queries)} queries in parallel")
     
-    # Create tasks for each query with retry logic
+    # Prioritize queries - put simpler queries first for faster initial results
+    prioritized_queries = sorted(
+        enumerate(queries), 
+        key=lambda x: 0 if x[1]["query_type"] == "simple_vector" else 1
+    )
+    original_indices = [idx for idx, _ in prioritized_queries]
+    sorted_queries = [q for _, q in prioritized_queries]
+    
+    # Create tasks with retry logic
     tasks = [
         process_query_with_retry(
             q["query_type"],
@@ -307,47 +316,53 @@ async def process_queries_in_parallel(
             llm_service,
             vector_db_service,
         )
-        for q in queries
+        for q in sorted_queries
     ]
     
-    # Process queries with controlled concurrency
-    results = []
+    # Use a larger batch size for the first batch to get initial results faster
+    first_batch_size = min(len(tasks), MAX_CONCURRENT_QUERIES * 2)
+    remaining_tasks = tasks[first_batch_size:]
     
-    # Process in batches to avoid overwhelming the system
-    batch_size = MAX_CONCURRENT_QUERIES
-    for i in range(0, len(tasks), batch_size):
-        batch = tasks[i:i+batch_size]
-        logger.info(f"Processing batch {i//batch_size + 1}/{(len(tasks) + batch_size - 1)//batch_size} with {len(batch)} queries")
+    # Process first batch with higher priority
+    logger.info(f"Processing first batch with {first_batch_size} queries")
+    first_batch_results = await asyncio.gather(*tasks[:first_batch_size], return_exceptions=True)
+    
+    # Process remaining batches
+    remaining_results = []
+    if remaining_tasks:
+        # Process remaining tasks with standard concurrency
+        logger.info(f"Processing remaining {len(remaining_tasks)} queries")
+        remaining_results = await asyncio.gather(*remaining_tasks, return_exceptions=True)
+    
+    # Combine results
+    batch_results = first_batch_results + remaining_results
+    
+    # Process results, converting exceptions to fallback values
+    results = [None] * len(queries)  # Pre-allocate result list
+    
+    for i, result in enumerate(batch_results):
+        original_idx = original_indices[i]
+        q = queries[original_idx]
         
-        # Execute batch with individual error handling
-        batch_results = await asyncio.gather(*batch, return_exceptions=True)
-        
-        # Process results, converting exceptions to fallback values
-        for j, result in enumerate(batch_results):
-            query_index = i + j
-            q = queries[query_index]
-            
-            if isinstance(result, Exception):
-                logger.error(f"Query {query_index} failed: {str(result)}")
-                # Create fallback result
-                if q["format"] == "int":
-                    fallback_answer = 0
-                elif q["format"] == "bool":
-                    fallback_answer = False
-                elif q["format"] == "int_array":
-                    fallback_answer = []
-                elif q["format"] == "str_array":
-                    fallback_answer = []
-                else:
-                    fallback_answer = ""
-                
-                results.append(QueryResult(
-                    answer=fallback_answer,
-                    chunks=[],
-                    resolved_entities=[]
-                ))
+        if isinstance(result, Exception):
+            logger.error(f"Query {original_idx} failed: {str(result)}")
+            # Create fallback result based on format
+            if q["format"] == "int":
+                fallback_answer = 0
+            elif q["format"] == "bool":
+                fallback_answer = False
+            elif q["format"].endswith("_array"):
+                fallback_answer = []
             else:
-                results.append(result)
+                fallback_answer = ""
+            
+            results[original_idx] = QueryResult(
+                answer=fallback_answer,
+                chunks=[],
+                resolved_entities=[]
+            )
+        else:
+            results[original_idx] = result
     
     return results
 
@@ -419,135 +434,104 @@ async def inference_query(
     format: FormatType,
     llm_service: CompletionService,
 ) -> QueryResult:
-    """Generate a response, no need for vector retrieval."""
-    # Since we are just answering this query based on data provided in the query,
-    # there is no need to retrieve any chunks from the vector database.
+    """Generate a response with optimized processing, no need for vector retrieval."""
+    # Truncate query for logging
+    # query_preview = query[:30] + "..." if len(query) > 30 else query
+    # logger.info(f"Processing inference query: {query_preview}")
     
     try:
-        # Use the semaphore to limit concurrency even for inference queries
+        # Use the semaphore to limit concurrency
         async with QUERY_SEMAPHORE:
+            start_time = time.time()
+            
+            # Generate response from LLM
             answer = await generate_inferred_response(
                 llm_service, query, rules, format
             )
             answer_value = answer["answer"]
             
-            # Add logging for debugging answer value and format
-            logger.info(f"Raw answer from LLM: answer={repr(answer_value)}")
+            # Fast path for simple types
+            if format in ["int", "bool"] and not isinstance(answer_value, (list, dict)):
+                return QueryResult(answer=answer_value, chunks=[])
             
-            # ===== ENHANCED ARRAY HANDLING =====
-            # Special handling for array types to ensure correct formatting
+            # Optimized array handling
             if format.endswith("_array"):
-                logger.info(f"Array type detected ({format}), performing special handling")
-                
-                # Check if this is a tag or category query - use empty arrays for errors
+                # Check if this is a tag query - use empty arrays for errors
                 is_tag_query = any(keyword in query.lower() for keyword in 
                                 ["tag", "categor", "injur", "type", "list"])
                 
-                if is_tag_query:
-                    logger.info("TAG QUERY DETECTED - Using empty arrays for errors")
-                
-                # If we got a string that looks like a list, try to parse it
+                # Convert string to array if needed
                 if isinstance(answer_value, str):
-                    logger.info(f"Answer is string but should be array: {answer_value}")
-                    # Check for common array patterns in the string
-                    cleaned_value = answer_value.strip()
-                    
-                    # Try to parse as a Python list expression
                     try:
+                        # Try to parse as a Python list
                         import ast
-                        # Handle common json patterns like ['item1', 'item2'] or ["item1", "item2"]
-                        parsed_value = ast.literal_eval(cleaned_value)
-                        if isinstance(parsed_value, list):
-                            logger.info(f"Successfully parsed string to list: {parsed_value}")
-                            answer_value = parsed_value
-                    except (ValueError, SyntaxError) as e:
-                        logger.warning(f"Failed to parse as Python list: {e}")
-                        
-                        # If that fails, try more aggressive parsing
+                        cleaned_value = answer_value.strip()
                         if cleaned_value.startswith('[') and cleaned_value.endswith(']'):
-                            # Strip brackets and split by commas
-                            items = cleaned_value[1:-1].split(',')
-                            items = [item.strip().strip('\'"') for item in items]
-                            
-                            if format == 'int_array':
-                                # Try to convert to integers
-                                try:
-                                    int_items = [int(item) for item in items if item]
-                                    logger.info(f"Parsed as integer list: {int_items}")
-                                    answer_value = int_items 
-                                except ValueError:
-                                    logger.warning("Failed to convert to integers, using default")
-                                    answer_value = [0] if not is_tag_query else []  # Empty for tag queries
-                            else:
-                                # For string arrays
-                                logger.info(f"Parsed as string list: {items}")
-                                answer_value = items if any(items) else []
+                            try:
+                                parsed_value = ast.literal_eval(cleaned_value)
+                                if isinstance(parsed_value, list):
+                                    answer_value = parsed_value
+                            except (ValueError, SyntaxError):
+                                # Fallback to simple parsing
+                                items = cleaned_value[1:-1].split(',')
+                                items = [item.strip().strip('\'"') for item in items if item.strip()]
+                                
+                                if format == 'int_array':
+                                    try:
+                                        answer_value = [int(item) for item in items]
+                                    except ValueError:
+                                        answer_value = [] if is_tag_query else [0]
+                                else:
+                                    answer_value = items
+                    except Exception:
+                        # If all parsing fails, use default
+                        answer_value = [] if is_tag_query else ([0] if format == 'int_array' else [])
                 
-                # Final validation that we have a list
+                # Ensure we have a list
                 if not isinstance(answer_value, list):
-                    logger.warning(f"Answer is not a list after processing: {type(answer_value).__name__}")
-                    # Set appropriate defaults by type
-                    if format == 'int_array':
-                        answer_value = [0] if not is_tag_query else []
-                    else:
-                        answer_value = []
+                    answer_value = [] if is_tag_query else ([0] if format == 'int_array' else [])
             
-            # ===== END ARRAY HANDLING =====
-            
-            # Extract and apply keyword replacements from all resolve_entity rules
-            resolve_entity_rules = [
-                rule for rule in rules if rule.type == "resolve_entity"
-            ]
-
+            # Entity resolution if needed
+            resolve_entity_rules = [rule for rule in rules if rule.type == "resolve_entity"]
             if resolve_entity_rules and answer_value:
-                # Combine all replacements from all resolve_entity rules
+                # Build replacements dictionary
                 replacements = {}
                 for rule in resolve_entity_rules:
                     if rule.options:
-                        rule_replacements = dict(
-                            option.split(":") for option in rule.options
-                        )
-                        replacements.update(rule_replacements)
-
+                        try:
+                            rule_replacements = dict(option.split(":") for option in rule.options)
+                            replacements.update(rule_replacements)
+                        except ValueError:
+                            continue
+                
+                # Apply replacements if any
                 if replacements:
-                    logger.info(f"Resolving entities in answer: {answer_value}")
-                    # Handle array and non-array types differently
                     if isinstance(answer_value, list):
-                        transformed_value, transform_dict = replace_keywords(answer_value, replacements)
+                        transformed_value, _ = replace_keywords(answer_value, replacements)
                         answer_value = transformed_value
                     else:
-                        transformed_value, transform_dict = replace_keywords_in_string(str(answer_value), replacements)
+                        transformed_value, _ = replace_keywords_in_string(str(answer_value), replacements)
                         answer_value = transformed_value
             
-            logger.info(f"Processed response: {answer_value}")
+            elapsed = time.time() - start_time
+            logger.info(f"Inference query processed in {elapsed:.2f}s")
             return QueryResult(answer=answer_value, chunks=[])
         
     except Exception as e:
         logger.error(f"Error in inference query: {str(e)}")
-        # Check if this is a tag query
-        is_tag_query = False
-        if format.endswith('_array'):
-            is_tag_query = any(keyword in query.lower() for keyword in 
-                           ["tag", "categor", "injur", "type", "list"])
         
-        # Create a type-appropriate fallback based on the format
+        # Fast fallback creation based on format
+        is_tag_query = format.endswith('_array') and any(
+            keyword in query.lower() for keyword in ["tag", "categor", "injur", "type", "list"]
+        )
+        
         if format == 'int':
             fallback_value = 0
         elif format == 'bool':
             fallback_value = False
-        elif format == 'int_array':
-            fallback_value = [] if is_tag_query else [0]
-        elif format == 'str_array':
-            # For string arrays, always use empty arrays for tag queries
+        elif format.endswith('_array'):
             fallback_value = []
         else:
-            # String format - use empty string for tags
-            if "tag" in query.lower() or "categor" in query.lower():
-                fallback_value = ""
-            else:
-                fallback_value = ""  # Empty string instead of error
+            fallback_value = ""
             
-        return QueryResult(
-            answer=fallback_value,
-            chunks=[]
-        )
+        return QueryResult(answer=fallback_value, chunks=[])

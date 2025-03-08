@@ -857,13 +857,14 @@ export const useStore = create<Store>()(
           const tableWithProgress = getTable(activeTableId);
           const existingProgress = tableWithProgress.requestProgress || { total: 0, completed: 0, inProgress: false };
           
-          // If there's already a progress in progress, add to it, otherwise create new
+          // IMPORTANT FIX: Always reset completed to 0 when starting a new batch
+          // This ensures the progress bar starts from 0% and not 100%
           editTable(activeTableId, {
             requestProgress: {
               total: existingProgress.inProgress 
                 ? existingProgress.total + queriesToRun.length 
                 : queriesToRun.length,
-              completed: existingProgress.inProgress ? existingProgress.completed : 0,
+              completed: 0, // Always reset to 0 when starting a new batch
               inProgress: true,
               error: false // Reset error state when starting new requests
             }
@@ -901,27 +902,38 @@ export const useStore = create<Store>()(
             batchSize: useBatchSize,
             maxRetries: 3,
             retryDelay: 1000,
-            onQueryProgress: (result, index) => {
+            onQueryProgress: (result, index, total) => {
+              // Process the result
               if (result && !result.error && index < queriesToRun.length) {
                 processQueryResult(result, queriesToRun[index]);
-                // Update progress counter
-                const currentTable = getTable(activeTableId);
-                const currentProgress = currentTable.requestProgress || { total: queriesToRun.length, completed: 0, inProgress: true };
-                editTable(activeTableId, {
-                  requestProgress: {
-                    ...currentProgress,
-                    completed: currentProgress.completed + 1
-                  }
-                });
-              } else if (result.error && index < queriesToRun.length) {
+              } else if (result && result.error && index < queriesToRun.length) {
                 handleQueryError(result.error, queriesToRun[index]);
-                // Update progress counter even for errors
-                const currentTable = getTable(activeTableId);
-                const currentProgress = currentTable.requestProgress || { total: queriesToRun.length, completed: 0, inProgress: true };
+              }
+              
+              // Get the current progress state
+              const currentTable = getTable(activeTableId);
+              const currentProgress = currentTable.requestProgress || { 
+                total: queriesToRun.length, 
+                completed: 0, 
+                inProgress: true 
+              };
+              
+              // Calculate the new completed count - use the total from the API module
+              // which is tracking the exact number of processed queries
+              const newCompletedCount = typeof total === 'number' ? 
+                Math.min(total, currentProgress.total) : // Use the total from API if it's a number
+                currentProgress.completed + 1;           // Fallback to incrementing by 1
+              
+              // Only update if the count has changed
+              if (newCompletedCount !== currentProgress.completed) {
+                // Log for debugging
+                // console.log(`Store updating progress: ${newCompletedCount}/${currentProgress.total}`);
+                
+                // Update the progress state
                 editTable(activeTableId, {
                   requestProgress: {
                     ...currentProgress,
-                    completed: currentProgress.completed + 1
+                    completed: newCompletedCount
                   }
                 });
               }
@@ -963,7 +975,7 @@ export const useStore = create<Store>()(
             }
           }
               
-              // Update progress counter for the batch
+              // Update progress counter for the batch with strict validation
               try {
                 const currentTable = getTable(activeTableId);
                 if (!currentTable) {
@@ -980,17 +992,26 @@ export const useStore = create<Store>()(
                 // Make sure results.length is a valid number
                 const validCompletedResults = Array.isArray(results) ? results.length : 0;
                 
+                // Ensure we never exceed the total count
                 const completedCount = Math.min(
                   currentProgress.completed + validCompletedResults,
                   currentProgress.total
                 );
                 
-                editTable(activeTableId, {
-                  requestProgress: {
-                    ...currentProgress,
-                    completed: completedCount
-                  }
-                });
+                // Log progress for debugging
+                console.log(`Progress update: ${completedCount}/${currentProgress.total} (${Math.round(completedCount/currentProgress.total*100)}%)`);
+                
+                // Only update if the count is valid and doesn't exceed total
+                if (completedCount <= currentProgress.total) {
+                  editTable(activeTableId, {
+                    requestProgress: {
+                      ...currentProgress,
+                      completed: completedCount
+                    }
+                  });
+                } else {
+                  console.error(`Invalid progress count: ${completedCount}/${currentProgress.total}`);
+                }
               } catch (error) {
                 console.error('Error updating batch progress:', error);
                 // Continue processing even if progress tracking fails
@@ -1003,10 +1024,16 @@ export const useStore = create<Store>()(
             const currentTable = getTable(activeTableId);
             const currentProgress = currentTable.requestProgress || { total: 0, completed: 0, inProgress: false };
             
+            // Ensure completed count never exceeds total
+            const finalCompletedCount = Math.min(currentProgress.completed, currentProgress.total);
+            
+            // Log final progress for debugging
+            console.log(`Final progress: ${finalCompletedCount}/${currentProgress.total} (${Math.round(finalCompletedCount/currentProgress.total*100)}%)`);
+            
             editTable(activeTableId, {
               requestProgress: {
                 total: currentProgress.total,
-                completed: currentProgress.completed,
+                completed: finalCompletedCount,
                 inProgress: false
               }
             });
@@ -1217,12 +1244,12 @@ export const useStore = create<Store>()(
             
             // Debug info
             console.log(`Saving table: ${table.id} with ${table.rows.length} rows and ${table.columns.length} columns`);
-            console.log(`Row cell counts: ${table.rows.slice(0, 3).map(r => Object.keys(r.cells).length).join(', ')}...`);
+            // console.log(`Row cell counts: ${table.rows.slice(0, 3).map(r => Object.keys(r.cells).length).join(', ')}...`);
             
             // Check for large data payload
             const estimatedSize = JSON.stringify(table).length;
             const megabytes = estimatedSize / (1024 * 1024);
-            console.log(`Estimated payload size: ${megabytes.toFixed(2)} MB`);
+            // console.log(`Estimated payload size: ${megabytes.toFixed(2)} MB`);
             
             // Handle large tables by optimizing the saved data
             let tableToSave = table;

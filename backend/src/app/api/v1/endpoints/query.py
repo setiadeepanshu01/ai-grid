@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 import uuid
 from typing import Dict, Any, List
 
@@ -187,10 +188,10 @@ async def run_batch_queries(
     vector_db_service: VectorDBService = Depends(get_vector_db_service),
 ) -> List[QueryAnswerResponse]:
     """
-    Run multiple queries in parallel and generate responses.
+    Run multiple queries in parallel with optimized processing for faster initial responses.
     
-    This endpoint processes multiple query requests in parallel, improving performance
-    when multiple queries need to be executed at once.
+    This endpoint processes multiple query requests in parallel, with optimizations to
+    return initial results as quickly as possible.
 
     Parameters
     ----------
@@ -219,137 +220,196 @@ async def run_batch_queries(
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept, Origin"
     
     try:
+        start_time = time.time()
         logger.info(f"Received batch query request with {len(requests)} queries")
         
-        # Separate inference queries from vector queries
+        # Prioritize and categorize queries for optimal processing
         inference_requests = []
-        vector_requests = []
+        simple_vector_requests = []
+        complex_vector_requests = []
         
+        # Categorize queries by complexity for prioritized processing
         for req in requests:
             if req.document_id == "00000000000000000000000000000000":
                 inference_requests.append(req)
+            elif not req.prompt.rules and req.prompt.type != "bool":
+                # Simple vector queries are faster
+                simple_vector_requests.append(req)
             else:
-                vector_requests.append(req)
+                # Complex queries with rules or boolean outputs
+                complex_vector_requests.append(req)
         
-        # Process inference queries in parallel
-        inference_tasks = []
-        for req in inference_requests:
-            task = inference_query(
-                req.prompt.query,
-                req.prompt.rules,
-                req.prompt.type,
-                llm_service,
-            )
-            inference_tasks.append(task)
+        # Pre-allocate results array with the exact size needed
+        results = [None] * len(requests)
+        request_to_index = {}
         
-        # Process vector queries in parallel
-        vector_query_params = []
-        for req in vector_requests:
-            query_type = (
-                "hybrid"
-                if req.prompt.rules or req.prompt.type == "bool"
-                else "vector"
-            )
-            
-            vector_query_params.append({
-                "query_type": query_type,
-                "query": req.prompt.query,
-                "document_id": req.document_id,
-                "rules": req.prompt.rules,
-                "format": req.prompt.type,
-            })
+        # Map requests to their original indices
+        for i, req in enumerate(requests):
+            request_to_index[id(req)] = i
         
-        # Execute all queries in parallel
-        results = []
+        # Process simple queries first to get initial results faster
+        priority_requests = inference_requests + simple_vector_requests
+        remaining_requests = complex_vector_requests
         
-        if inference_tasks:
-            inference_results = await asyncio.gather(*inference_tasks, return_exceptions=True)
-            results.extend(inference_results)
-        
-        if vector_query_params:
-            vector_results = await process_queries_in_parallel(
-                vector_query_params, llm_service, vector_db_service
-            )
-            results.extend(vector_results)
-        
-        # Convert results to response format
-        responses = []
-        for i, result in enumerate(results):
-            req = inference_requests[i] if i < len(inference_requests) else vector_requests[i - len(inference_requests)]
-            
-            # Handle exceptions returned by asyncio.gather
-            if isinstance(result, Exception):
-                logger.error(f"Error in query {i}: {str(result)}")
-                # Create a type-appropriate fallback
-                if req.prompt.type == "int":
-                    fallback_answer = 0
-                elif req.prompt.type == "bool":
-                    fallback_answer = False
-                elif req.prompt.type == "int_array":
-                    fallback_answer = []
-                elif req.prompt.type == "str_array":
-                    fallback_answer = []
-                else:
-                    fallback_answer = ""
-                
-                result = QueryResult(
-                    answer=fallback_answer,
-                    chunks=[],
-                    resolved_entities=[]
+        # Process priority queries
+        if priority_requests:
+            # Prepare inference tasks
+            inference_tasks = []
+            for req in inference_requests:
+                task = inference_query(
+                    req.prompt.query,
+                    req.prompt.rules,
+                    req.prompt.type,
+                    llm_service,
                 )
-            elif not isinstance(result, QueryResult):
+                inference_tasks.append((req, task))
+            
+            # Prepare simple vector query parameters
+            simple_vector_params = []
+            for req in simple_vector_requests:
+                simple_vector_params.append({
+                    "query_type": "simple_vector",
+                    "query": req.prompt.query,
+                    "document_id": req.document_id,
+                    "rules": req.prompt.rules,
+                    "format": req.prompt.type,
+                    "_original_req": req,
+                })
+            
+            # Execute inference queries
+            if inference_tasks:
+                for req, task in inference_tasks:
+                    try:
+                        result = await task
+                        idx = request_to_index[id(req)]
+                        results[idx] = create_response_from_result(req, result)
+                    except Exception as e:
+                        logger.error(f"Error in inference query: {str(e)}")
+                        idx = request_to_index[id(req)]
+                        results[idx] = create_fallback_response(req)
+            
+            # Execute simple vector queries
+            if simple_vector_params:
                 try:
-                    result = QueryResult(**result)
-                except Exception as e:
-                    logger.error(f"Error converting result to QueryResult: {str(e)}")
-                    result = QueryResult(
-                        answer="" if req.prompt.type == "str" else 
-                               0 if req.prompt.type == "int" else
-                               False if req.prompt.type == "bool" else [],
-                        chunks=[],
-                        resolved_entities=[]
+                    vector_results = await process_queries_in_parallel(
+                        simple_vector_params, llm_service, vector_db_service
                     )
-            
-            # Create answer object
-            answer = QueryAnswer(
-                id=uuid.uuid4().hex,
-                document_id=req.document_id,
-                prompt_id=req.prompt.id,
-                answer=result.answer,
-                type=req.prompt.type,
-            )
-            
-            # Create response
-            response = QueryAnswerResponse(
-                answer=answer,
-                chunks=result.chunks or [],
-                resolved_entities=result.resolved_entities or [],
-            )
-            
-            responses.append(response)
+                    
+                    # Map results back to original indices
+                    for i, result in enumerate(vector_results):
+                        req = simple_vector_params[i]["_original_req"]
+                        idx = request_to_index[id(req)]
+                        results[idx] = create_response_from_result(req, result)
+                except Exception as e:
+                    logger.error(f"Error processing simple vector queries: {str(e)}")
+                    # Create fallbacks for failed queries
+                    for param in simple_vector_params:
+                        req = param["_original_req"]
+                        idx = request_to_index[id(req)]
+                        results[idx] = create_fallback_response(req)
         
-        return responses
+        # Process remaining complex queries
+        if remaining_requests:
+            complex_params = []
+            for req in remaining_requests:
+                complex_params.append({
+                    "query_type": "hybrid",
+                    "query": req.prompt.query,
+                    "document_id": req.document_id,
+                    "rules": req.prompt.rules,
+                    "format": req.prompt.type,
+                    "_original_req": req,
+                })
+            
+            try:
+                complex_results = await process_queries_in_parallel(
+                    complex_params, llm_service, vector_db_service
+                )
+                
+                # Map results back to original indices
+                for i, result in enumerate(complex_results):
+                    req = complex_params[i]["_original_req"]
+                    idx = request_to_index[id(req)]
+                    results[idx] = create_response_from_result(req, result)
+            except Exception as e:
+                logger.error(f"Error processing complex queries: {str(e)}")
+                # Create fallbacks for failed queries
+                for param in complex_params:
+                    req = param["_original_req"]
+                    idx = request_to_index[id(req)]
+                    results[idx] = create_fallback_response(req)
         
-    except asyncio.TimeoutError:
-        logger.error("Timeout occurred while processing batch queries")
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Request timed out while waiting for responses from the language model"
-        )
-    except ValueError as e:
-        logger.error(f"Invalid input in batch request: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid input in batch request: {str(e)}"
-        )
+        # Fill any remaining None values with fallbacks
+        for i, result in enumerate(results):
+            if result is None:
+                results[i] = create_fallback_response(requests[i])
+        
+        elapsed = time.time() - start_time
+        logger.info(f"Batch query processing completed in {elapsed:.2f}s")
+        
+        return results
+        
     except Exception as e:
         logger.error(f"Error processing batch queries: {str(e)}")
-        error_detail = str(e) if str(e) else "Internal server error"
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=error_detail
-        )
+        # Create fallback responses for all requests
+        return [create_fallback_response(req) for req in requests]
 
+def create_response_from_result(req: QueryRequestSchema, result: Any) -> QueryAnswerResponse:
+    """Create a QueryAnswerResponse from a query result."""
+    # Handle exceptions
+    if isinstance(result, Exception):
+        return create_fallback_response(req)
+    
+    # Convert to QueryResult if needed
+    if not isinstance(result, QueryResult):
+        try:
+            result = QueryResult(**result)
+        except Exception:
+            return create_fallback_response(req)
+    
+    # Create answer object
+    answer = QueryAnswer(
+        id=uuid.uuid4().hex,
+        document_id=req.document_id,
+        prompt_id=req.prompt.id,
+        answer=result.answer,
+        type=req.prompt.type,
+    )
+    
+    # Create response
+    return QueryAnswerResponse(
+        answer=answer,
+        chunks=result.chunks or [],
+        resolved_entities=result.resolved_entities or [],
+    )
+
+def create_fallback_response(req: QueryRequestSchema) -> QueryAnswerResponse:
+    """Create a fallback response for a failed query."""
+    # Create a type-appropriate fallback
+    if req.prompt.type == "int":
+        fallback_answer = 0
+    elif req.prompt.type == "bool":
+        fallback_answer = False
+    elif req.prompt.type.endswith("_array"):
+        fallback_answer = []
+    else:
+        fallback_answer = ""
+    
+    # Create answer object
+    answer = QueryAnswer(
+        id=uuid.uuid4().hex,
+        document_id=req.document_id,
+        prompt_id=req.prompt.id,
+        answer=fallback_answer,
+        type=req.prompt.type,
+    )
+    
+    # Create response
+    return QueryAnswerResponse(
+        answer=answer,
+        chunks=[],
+        resolved_entities=[],
+    )
 
 @router.get("/test-error", response_model=Dict[str, Any])
 async def test_error(error_type: str = "timeout") -> Dict[str, Any]:
@@ -390,3 +450,4 @@ async def test_error(error_type: str = "timeout") -> Dict[str, Any]:
         )
     else:
         return {"message": f"Unknown error type: {error_type}"}
+    

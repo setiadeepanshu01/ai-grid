@@ -173,7 +173,7 @@ export function KtAutoPersistence() {
       lastSaveTimeRef.current = Date.now();
       
       // Try to save to the backend with debug logging
-      console.log('Attempting to save table state after detecting changes');
+      // console.log('Attempting to save table state after detecting changes');
       useStore.getState().saveTableState()
         .then(() => {
           console.log('Table state saved successfully (auto-save)');

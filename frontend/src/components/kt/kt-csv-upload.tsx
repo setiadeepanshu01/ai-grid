@@ -131,8 +131,8 @@ export function KtCsvUpload() {
               await store.saveTableState();
               
               console.log("CSV import successful");
-              console.log("New columns:", newColumns);
-              console.log("New rows:", newRows);
+              // console.log("New columns:", newColumns);
+              // console.log("New rows:", newRows);
               console.log("Current table state:", store.getTable());
               
               notifications.show({

@@ -148,7 +148,7 @@ export async function saveTableState(tableId: string, tableName: string, tableDa
     
     // Get the response data and log it for debugging
     const responseData = await response.json();
-    console.log('Table state saved successfully with ID:', responseData.id);
+    // console.log('Table state saved successfully with ID:', responseData.id);
     return responseData;
   } catch (error) {
     console.error('Error saving table state:', error);
@@ -227,7 +227,7 @@ export async function updateTableState(tableId: string, tableData: any): Promise
     
     // Get the response data and log it for debugging
     const responseData = await response.json();
-    console.log('Table state updated successfully with ID:', responseData.id);
+    // console.log('Table state updated successfully with ID:', responseData.id);
     return responseData;
   } catch (error) {
     console.error('Error updating table state:', error);

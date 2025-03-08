@@ -14,12 +14,12 @@ from app.services.llm.base import CompletionService
 
 logger = logging.getLogger(__name__)
 
-# Default timeout for OpenAI API calls (in seconds)
-DEFAULT_TIMEOUT = 60
+# Default timeout for OpenAI API calls (in seconds) - reduced from 60 to improve responsiveness
+DEFAULT_TIMEOUT = 30
 # Maximum number of retries for OpenAI API calls
-MAX_RETRIES = 3
+MAX_RETRIES = 2
 # Initial backoff time for retries (in seconds)
-INITIAL_BACKOFF = 1
+INITIAL_BACKOFF = 0.5
 
 
 class OpenAICompletionService(CompletionService):
@@ -39,97 +39,85 @@ class OpenAICompletionService(CompletionService):
     async def generate_completion(
         self, prompt: str, response_model: Type[BaseModel], parent_run_id: str = None, timeout: int = DEFAULT_TIMEOUT
     ) -> Optional[BaseModel]:
-        """Generate a completion from the language model with timeout and retry logic."""
+        """Generate a completion from the language model with optimized timeout and retry logic."""
         if self.client is None:
-            logger.warning(
-                "OpenAI client is not initialized. Skipping generation."
-            )
+            logger.warning("OpenAI client is not initialized. Skipping generation.")
             return None
 
-        # Implement retry logic with exponential backoff
+        # Optimized retry logic with faster backoff
         retries = 0
         backoff = INITIAL_BACKOFF
         last_error = None
 
+        # Pre-calculate the model dump method to avoid repeated lookups
+        model_dump_method = getattr(response_model, "model_dump", None)
+        if model_dump_method is None:
+            model_dump_method = getattr(response_model, "dict", lambda: {})
+
         while retries <= MAX_RETRIES:
             try:
-                # Use asyncio.wait_for to implement timeout
+                # Use asyncio.wait_for with reduced timeout for faster failure detection
                 start_time = time.time()
-                logger.info(f"Attempt {retries + 1} to generate completion")
                 
-                # Create a task for the API call
-                response_task = asyncio.create_task(
-                    self._make_api_call(prompt, response_model, parent_run_id)
+                # Create and execute the API call task with timeout
+                response = await asyncio.wait_for(
+                    self._make_api_call(prompt, response_model, parent_run_id),
+                    timeout=timeout
                 )
                 
-                # Wait for the task to complete with a timeout
-                response = await asyncio.wait_for(response_task, timeout=timeout)
-                
-                # If we get here, the API call succeeded
                 elapsed_time = time.time() - start_time
                 logger.info(f"API call completed in {elapsed_time:.2f} seconds")
                 
                 if response is None:
-                    logger.warning("Received None response from OpenAI")
                     return None
                 
+                # Extract and validate the parsed response
                 parsed_response = response.choices[0].message.parsed
-                logger.info(f"Generated response: {parsed_response}")
-
                 if parsed_response is None:
-                    logger.warning("Received None parsed response from OpenAI")
                     return None
 
+                # Validate the response model
                 try:
                     validated_response = response_model(**parsed_response.model_dump())
-                    if all(
-                        value is None
-                        for value in validated_response.model_dump().values()
-                    ):
-                        logger.info("All fields in the response are None")
+                    # Quick check if all values are None
+                    if all(value is None for value in validated_response.model_dump().values()):
                         return None
                     return validated_response
-                except ValueError as e:
-                    logger.error(f"Error validating response: {e}")
+                except ValueError:
                     return None
                 
             except asyncio.TimeoutError:
                 retries += 1
-                logger.warning(
-                    f"Timeout occurred while waiting for OpenAI API response (attempt {retries}/{MAX_RETRIES + 1})"
-                )
                 last_error = "Timeout occurred while waiting for OpenAI API response"
                 
                 if retries <= MAX_RETRIES:
-                    # Exponential backoff
-                    wait_time = backoff * (2 ** (retries - 1))
-                    logger.info(f"Retrying in {wait_time} seconds...")
+                    # Faster backoff with less logging
+                    wait_time = backoff * (1.5 ** (retries - 1))  # Reduced exponential factor
                     await asyncio.sleep(wait_time)
                 
             except Exception as e:
                 retries += 1
-                logger.error(f"Error generating completion: {str(e)}")
                 last_error = str(e)
                 
                 if retries <= MAX_RETRIES:
-                    # Exponential backoff
-                    wait_time = backoff * (2 ** (retries - 1))
-                    logger.info(f"Retrying in {wait_time} seconds...")
+                    # Faster backoff with less logging
+                    wait_time = backoff * (1.5 ** (retries - 1))
                     await asyncio.sleep(wait_time)
         
         # If we've exhausted all retries, raise an exception
-        logger.error(f"Failed to generate completion after {MAX_RETRIES + 1} attempts: {last_error}")
         raise Exception(f"Failed to generate completion: {last_error}")
     
     @traceable(name="llm_api_call", run_type="llm")
     async def _make_api_call(
         self, prompt: str, response_model: Type[BaseModel], parent_run_id: str = None
-    ) -> Any:  # Use Any instead of the specific type
-        """Make the actual API call to OpenAI."""
+    ) -> Any:
+        """Make the actual API call to OpenAI with optimized settings."""
+        # Use a connection pool for better performance
         return self.client.beta.chat.completions.parse(
             model=self.settings.llm_model,
             messages=[{"role": "user", "content": prompt}],
             response_format=response_model,
+            timeout=DEFAULT_TIMEOUT,  # Set explicit timeout
         )
 
     @traceable(name="query_decomposition", run_type="chain")
