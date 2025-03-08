@@ -21,8 +21,8 @@ DB_PATH = settings.table_states_db_uri
 logger.info(f"Using configured database path: {DB_PATH}")
 
 # Log the database path for debugging
-logger.info(f"Table states database path: {DB_PATH}")
-logger.info(f"Absolute database path: {os.path.abspath(DB_PATH)}")
+# logger.info(f"Table states database path: {DB_PATH}")
+# logger.info(f"Absolute database path: {os.path.abspath(DB_PATH)}")
 
 # Ensure the directory exists with proper permissions
 dir_path = os.path.dirname(DB_PATH) if os.path.dirname(DB_PATH) else '.'

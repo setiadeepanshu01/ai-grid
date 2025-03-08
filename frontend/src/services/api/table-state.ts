@@ -104,7 +104,7 @@ export async function saveTableState(tableId: string, tableName: string, tableDa
     // Check payload size
     const payloadStr = JSON.stringify(payload);
     const payloadSizeMB = payloadStr.length / (1024 * 1024);
-    console.log(`Table state payload size: ${payloadSizeMB.toFixed(2)} MB`);
+    // console.log(`Table state payload size: ${payloadSizeMB.toFixed(2)} MB`);
     
     // If payload is extremely large, implement chunking or compression
     if (payloadSizeMB > 20) {

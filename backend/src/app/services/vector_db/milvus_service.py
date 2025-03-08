@@ -5,7 +5,6 @@ import logging
 import uuid
 from typing import Any, Dict, List
 
-from langsmith import traceable
 from pydantic import BaseModel, Field
 from pymilvus import DataType, MilvusClient
 
@@ -107,7 +106,6 @@ class MilvusService(VectorDBService):
             logger.error(f"Error ensuring collection exists: {e}")
             raise
 
-    @traceable(name="vector_db_upsert", run_type="tool")
     async def upsert_vectors(
         self, vectors: List[Dict[str, Any]], parent_run_id: str = None
     ) -> Dict[str, str]:
@@ -145,7 +143,6 @@ class MilvusService(VectorDBService):
                 logger.error(f"Sample vector data: {vectors[0]}")
             raise
 
-    @traceable(name="vector_db_search", run_type="retriever")
     async def vector_search(
         self, queries: List[str], document_id: str, parent_run_id: str = None
     ) -> VectorResponseSchema:
@@ -200,7 +197,6 @@ class MilvusService(VectorDBService):
             chunks=formatted_output,
         )
 
-    @traceable(name="keyword_search", run_type="retriever")
     async def keyword_search(
         self, query: str, document_id: str, keywords: list[str], parent_run_id: str = None
     ) -> VectorResponseSchema:
@@ -275,7 +271,6 @@ class MilvusService(VectorDBService):
             keywords=response,
         )
 
-    @traceable(name="hybrid_search", run_type="retriever")
     async def hybrid_search(
         self, query: str, document_id: str, rules: list[Rule], parent_run_id: str = None
     ) -> VectorResponseSchema:
@@ -417,7 +412,6 @@ class MilvusService(VectorDBService):
             )
             raise
 
-    @traceable(name="decomposed_search", run_type="chain")
     async def decomposed_search(
         self, query: str, document_id: str, rules: List[Rule], parent_run_id: str = None
     ) -> Dict[str, Any]:
@@ -448,7 +442,6 @@ class MilvusService(VectorDBService):
             "sub_queries": sub_query_results,
         }
     
-    @traceable(name="get_document_chunks", run_type="retriever")
     async def get_document_chunks(self, document_id: str, parent_run_id: str = None) -> List[Dict[str, Any]]:
         """Get all chunks for a document from the Milvus database.
         
@@ -489,7 +482,6 @@ class MilvusService(VectorDBService):
             logger.error(f"Error retrieving document chunks from Milvus: {e}", exc_info=True)
             return []
     
-    @traceable(name="delete_document", run_type="tool")
     async def delete_document(self, document_id: str, parent_run_id: str = None) -> Dict[str, str]:
         """Delete a document from the Milvus vector database."""
         self.client.delete(

@@ -1285,9 +1285,9 @@ export const useStore = create<Store>()(
             try {
               // Try direct update first (most common case)
               try {
-                console.log(`Attempting direct update for table ${table.id}`);
+                // console.log(`Attempting direct update for table ${table.id}`);
                 await apiUpdateTableState(table.id, tableToSave);
-                console.log('Table state update successful via direct PUT');
+                // console.log('Table state update successful via direct PUT');
                 return;
               } catch (updateError) {
                 // If update fails, provide detailed error

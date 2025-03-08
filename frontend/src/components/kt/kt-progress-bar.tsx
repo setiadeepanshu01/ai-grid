@@ -75,9 +75,34 @@ export function KtProgressBar() {
     ? (requestProgress.error ? "Processing failed" : "Processing complete") 
     : "Processing requests";
   
-  // Debug logging
-  // console.log(`[ProgressBar] Raw values: completed=${rawCompleted}, total=${total}, inProgress=${requestProgress.inProgress}`);
-  // console.log(`[ProgressBar] Displayed values: completed=${completed}, total=${total}, percentage=${percentage}%`);
+  // Calculate estimated time remaining (ETA)
+  let etaText = null;
+  if (requestProgress.inProgress && total > 0 && completed > 0) {
+    // More accurate estimate based on batch processing
+    // A batch of 20 queries takes about 3-5 seconds
+    const batchSize = 20;
+    const secondsPerBatch = 5; // Average time for a batch of 20 queries
+    
+    const remainingQueries = total - completed;
+    const remainingBatches = Math.ceil(remainingQueries / batchSize);
+    const estimatedSecondsRemaining = remainingBatches * secondsPerBatch;
+    
+    // Add a small buffer for network latency and processing overhead
+    const adjustedSecondsRemaining = Math.ceil(estimatedSecondsRemaining * 1.1);
+    
+    if (adjustedSecondsRemaining < 60) {
+      etaText = `${adjustedSecondsRemaining} seconds remaining`;
+    } else if (adjustedSecondsRemaining < 3600) {
+      etaText = `${Math.ceil(adjustedSecondsRemaining / 60)} minutes remaining`;
+    } else {
+      const hours = Math.floor(adjustedSecondsRemaining / 3600);
+      const minutes = Math.ceil((adjustedSecondsRemaining % 3600) / 60);
+      etaText = `${hours}h ${minutes}m remaining`;
+    }
+  } else if (requestProgress.inProgress && total > 0) {
+    // If we haven't processed any queries yet, show a calculating message
+    etaText = "Calculating...";
+  }
   
   return (
     <Paper 
@@ -121,9 +146,16 @@ export function KtProgressBar() {
           striped={requestProgress.inProgress}
           animated={requestProgress.inProgress}
         />
-        <Text size="xs" ta="center" mt={5} c="dimmed">
-          {percentage}% complete
-        </Text>
+        <Group justify="space-between" mt={5}>
+          <Text size="xs" c="dimmed">
+            {percentage}% complete
+          </Text>
+          {etaText && (
+            <Text size="xs" c="dimmed">
+              {etaText}
+            </Text>
+          )}
+        </Group>
       </Box>
     </Paper>
   );

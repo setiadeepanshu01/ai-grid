@@ -221,7 +221,7 @@ export const fetchDocumentPreview = async (documentId: string): Promise<string> 
     }
     
     const data = await response.json();
-    console.log(`Preview response data:`, data);
+    // console.log(`Preview response data:`, data);
     
     if (!data || !data.content) {
       console.error('No content in preview response:', data);
@@ -244,7 +244,7 @@ let _totalQueries = 0;
 function resetQueryTracking(total: number): void {
   _processedIndices.clear();
   _totalQueries = total;
-  console.log(`Reset query tracking: 0/${_totalQueries}`);
+  // console.log(`Reset query tracking: 0/${_totalQueries}`);
 }
 
 // Get current progress
@@ -308,7 +308,7 @@ export const runBatchQueries = async (
   // Reset tracking counters with exact count
   const exactQueryCount = queries.length;
   resetQueryTracking(exactQueryCount);
-  console.log(`[${batchRunId}] Reset query tracking: 0/${exactQueryCount}`);
+  // console.log(`[${batchRunId}] Reset query tracking: 0/${exactQueryCount}`);
   
   // Create a set to track which indices have been processed
   // This is our single source of truth for tracking progress
@@ -473,11 +473,11 @@ export const runBatchQueries = async (
           }
           
           const originalIndex = batch[i]._originalQuery.index;
-          const rowId = batch[i]._originalQuery.row?.id;
-          const columnId = batch[i]._originalQuery.column?.id;
+          // const rowId = batch[i]._originalQuery.row?.id;
+          // const columnId = batch[i]._originalQuery.column?.id;
           
           // Log the update
-          console.log(`[${batchRunId}] Updating result for query ${originalIndex} (row: ${rowId}, column: ${columnId})`);
+          // console.log(`[${batchRunId}] Updating result for query ${originalIndex} (row: ${rowId}, column: ${columnId})`);
           
           // Mark query as processed
           batch[i]._originalQuery.processed = true;

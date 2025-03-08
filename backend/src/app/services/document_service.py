@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional
 
 from langchain.schema import Document as LangchainDocument
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langsmith import traceable
 
 from app.core.config import Settings
 from app.services.llm.base import CompletionService
@@ -39,7 +38,6 @@ class DocumentService:
             chunk_overlap=self.settings.chunk_overlap,
         )
 
-    @traceable(name="document_upload", run_type="chain")
     async def upload_document(
         self,
         filename: str,
@@ -638,7 +636,6 @@ class DocumentService:
     def _generate_document_id() -> str:
         return uuid.uuid4().hex
 
-    @traceable(name="document_delete", run_type="tool")
     async def delete_document(self, document_id: str, parent_run_id: str = None) -> Dict[str, str]:
         """Delete a document."""
         try:
@@ -649,7 +646,6 @@ class DocumentService:
             logger.error(f"Error deleting document: {e}")
             raise
 
-    @traceable(name="get_document_chunks", run_type="retriever")
     async def get_document_chunks(self, document_id: str, parent_run_id: str = None) -> List[Dict[str, Any]]:
         """Retrieve all chunks for a document from the vector database.
         

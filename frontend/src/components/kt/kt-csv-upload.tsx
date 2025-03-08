@@ -47,7 +47,7 @@ export function KtCsvUpload() {
           // Parse CSV content
           const data = parseCSV(content);
           
-          console.log("CSV data to import:", data);
+          // console.log("CSV data to import:", data);
           
           // Import data directly into the grid
           try {
@@ -133,7 +133,7 @@ export function KtCsvUpload() {
               console.log("CSV import successful");
               // console.log("New columns:", newColumns);
               // console.log("New rows:", newRows);
-              console.log("Current table state:", store.getTable());
+              // console.log("Current table state:", store.getTable());
               
               notifications.show({
                 title: 'CSV imported',

@@ -179,9 +179,9 @@ async def generate_inferred_response(
     dict[str, Any]
         A dictionary containing the generated answer or None if an error occurs.
     """
-    logger.info(
-        f"Generating inferred response for query: {query} in format: {format}"
-    )
+    # logger.info(
+    #     f"Generating inferred response for query: {query} in format: {format}"
+    # )
 
     output_model, format_specific_instructions = _get_model_and_instructions(
         format, rules, query
@@ -193,7 +193,7 @@ async def generate_inferred_response(
 
     try:
         response = await llm_service.generate_completion(prompt, output_model)
-        logger.info(f"Raw response from LLM: {response}")
+        # logger.info(f"Raw response from LLM: {response}")
 
         if response is None or response.answer is None:
             logger.warning("LLM returned None response")

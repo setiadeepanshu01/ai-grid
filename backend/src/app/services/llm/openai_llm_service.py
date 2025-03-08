@@ -5,7 +5,6 @@ import logging
 import time
 from typing import Any, Optional, Type
 
-from langsmith import traceable
 from openai import OpenAI
 from pydantic import BaseModel
 
@@ -35,7 +34,6 @@ class OpenAICompletionService(CompletionService):
                 "OpenAI API key is not set. LLM features will be disabled."
             )
 
-    @traceable(run_type="llm")
     async def generate_completion(
         self, prompt: str, response_model: Type[BaseModel], parent_run_id: str = None, timeout: int = DEFAULT_TIMEOUT
     ) -> Optional[BaseModel]:
@@ -107,7 +105,6 @@ class OpenAICompletionService(CompletionService):
         # If we've exhausted all retries, raise an exception
         raise Exception(f"Failed to generate completion: {last_error}")
     
-    @traceable(name="llm_api_call", run_type="llm")
     async def _make_api_call(
         self, prompt: str, response_model: Type[BaseModel], parent_run_id: str = None
     ) -> Any:
@@ -120,7 +117,6 @@ class OpenAICompletionService(CompletionService):
             timeout=DEFAULT_TIMEOUT,  # Set explicit timeout
         )
 
-    @traceable(name="query_decomposition", run_type="chain")
     async def decompose_query(self, query: str, parent_run_id: str = None) -> dict[str, Any]:
         """Decompose the query into smaller sub-queries."""
         if self.client is None:
