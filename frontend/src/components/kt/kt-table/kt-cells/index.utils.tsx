@@ -61,6 +61,10 @@ const setupGlobalHandlers = () => {
     // If click is inside the popover or a Mantine Menu, don't close it
     if (isInsidePopover || isInsideMantineMenu) return;
     
+    console.log('Click event target:', e.target);
+    console.log('isInsidePopover:', isInsidePopover);
+    console.log('isInsideMantineMenu:', isInsideMantineMenu);
+
     // If click is outside, close the popover
     store.setActivePopover(null);
   });
