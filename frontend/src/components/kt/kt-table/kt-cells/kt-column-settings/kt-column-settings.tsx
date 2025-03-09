@@ -111,16 +111,9 @@ export function KtColumnSettings({
   const rulesMenu = (
     <Box 
       w={430} 
-      onClick={(e) => e.stopPropagation()} 
-      onMouseDown={(e) => e.stopPropagation()}
-      data-mantine-stop-propagation="true"
     >
       {isEmpty(state.rules) ? (
-        <div 
-          onClick={(e) => e.stopPropagation()} 
-          onMouseDown={(e) => e.stopPropagation()}
-          data-mantine-stop-propagation="true"
-        >
+        <div>
           <Empty message="No rules are applied" />
         </div>
       ) : (
@@ -130,9 +123,6 @@ export function KtColumnSettings({
             mb="xs" 
             gap="xs" 
             wrap="nowrap"
-            onClick={(e) => e.stopPropagation()} 
-            onMouseDown={(e) => e.stopPropagation()}
-            data-mantine-stop-propagation="true"
           >
             <Select
               variant="unstyled"
@@ -146,9 +136,6 @@ export function KtColumnSettings({
                   handleRuleTypeChange(rule, type as AnswerTableRule["type"]);
                 }
               }}
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              data-mantine-stop-propagation="true"
             />
             {rule.type === "max_length" ? (
               <NumberInput
@@ -162,9 +149,6 @@ export function KtColumnSettings({
                     length: isString(length) ? 1 : length
                   })
                 }
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                data-mantine-stop-propagation="true"
               />
             ) : (
               <TagsInput
@@ -172,28 +156,16 @@ export function KtColumnSettings({
                 placeholder="Values"
                 value={rule.options ?? []}
                 onChange={options => handleRuleChange(rule, { options })}
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                data-mantine-stop-propagation="true"
               />
             )}
-            <div 
-              onClick={(e) => e.stopPropagation()} 
-              onMouseDown={(e) => e.stopPropagation()}
-              data-mantine-stop-propagation="true"
-            >
+            <div>
               <Info>
                 {ruleInfo[rule.type]}
               </Info>
             </div>
             <ActionIcon 
               color="red" 
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteRule(rule);
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              data-mantine-stop-propagation="true"
+              onClick={() => handleDeleteRule(rule)}
             >
               <IconTrash />
             </ActionIcon>
@@ -202,33 +174,19 @@ export function KtColumnSettings({
       )}
       <Alert 
         mt="xs" 
-        onClick={(e) => e.stopPropagation()} 
-        onMouseDown={(e) => e.stopPropagation()}
-        data-mantine-stop-propagation="true"
       >
         Global rules may also apply to this column.
       </Alert>
       <Divider 
         mt="xs" 
-        onClick={(e) => e.stopPropagation()} 
-        onMouseDown={(e) => e.stopPropagation()}
-        data-mantine-stop-propagation="true"
       />
       <Group 
         mt="xs"
-        onClick={(e) => e.stopPropagation()} 
-        onMouseDown={(e) => e.stopPropagation()}
-        data-mantine-stop-propagation="true"
       >
         <Button 
           flex={1} 
           leftSection={<IconPlus />} 
-          onClick={(e) => {
-            e.stopPropagation();
-            handleAddRule();
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          data-mantine-stop-propagation="true"
+          onClick={handleAddRule}
         >
           Add rule
         </Button>
@@ -237,12 +195,7 @@ export function KtColumnSettings({
           color="red"
           variant="light"
           leftSection={<IconTrash />}
-          onClick={(e) => {
-            e.stopPropagation();
-            handleSet({ rules: [] });
-          }}
-          onMouseDown={(e) => e.stopPropagation()}
-          data-mantine-stop-propagation="true"
+          onClick={() => handleSet({ rules: [] })}
         >
           Clear
         </Button>
@@ -262,9 +215,11 @@ export function KtColumnSettings({
           fw={500}
           size="md"
           variant="unstyled"
-          placeholder="Entity type"
+          label="Column Name"
+          placeholder=""
           defaultValue={state.entityType}
           onChange={e => handleSet({ entityType: e.target.value })}
+          required
         />
         <Group gap="xs" wrap="nowrap">
           <Tooltip label="Rerun column">
@@ -304,13 +259,8 @@ export function KtColumnSettings({
         menu={typeOptions.map(({ value: type, label, icon: Icon }) => (
           <Menu.Item
             key={type}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleSet({ type });
-            }}
+            onClick={() => handleSet({ type })}
             leftSection={<Icon />}
-            data-mantine-stop-propagation="true"
           >
             {label}
           </Menu.Item>
@@ -325,13 +275,8 @@ export function KtColumnSettings({
         menu={generateOptions.map(({ value: generate, label, icon: Icon }) => (
           <Menu.Item
             key={String(generate)}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleSet({ generate });
-            }}
+            onClick={() => handleSet({ generate })}
             leftSection={<Icon />}
-            data-mantine-stop-propagation="true"
           >
             {label}
           </Menu.Item>

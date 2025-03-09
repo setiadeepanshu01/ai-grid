@@ -86,12 +86,15 @@ if (typeof document !== 'undefined') {
 interface CellPopoverProps {
   monoClick?: boolean;
   mainAxisOffset?: number;
-  target: ReactNode;
+  target: ReactNode | ((props: { handleOpen: () => void }) => ReactNode);
   dropdown: ReactNode;
   scrollable?: boolean;
 }
 
-export function CellPopover({
+export { CellPopover };
+export type { CellPopoverProps };
+
+function CellPopover({
   monoClick,
   mainAxisOffset = 1,
   target,
@@ -145,7 +148,7 @@ export function CellPopover({
             ? { onClick: handleOpen }
             : { onDoubleClick: handleOpen })}
         >
-          {target}
+          {typeof target === 'function' ? target({ handleOpen }) : target}
         </Box>
       </Popover.Target>
       <Popover.Dropdown

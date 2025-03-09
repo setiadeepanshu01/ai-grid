@@ -4,7 +4,7 @@ import { IconGripVertical, IconSettings } from "@tabler/icons-react";
 import { KtColumnSettings } from "./kt-column-settings";
 import { AnswerTableColumn, useStore } from "@config/store";
 import { entityColor } from "@utils/functions";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { CellPopover } from "./index.utils";
 
 export interface KtColumnCell extends Cell {
@@ -33,8 +33,7 @@ export class KtColumnCellTemplate implements CellTemplate<KtColumnCell> {
 
   render({ column, columnIndex }: Compatible<KtColumnCell>) {
     const dragRef = useRef<HTMLDivElement>(null);
-    const [isHovered, setIsHovered] = useState(false);
-    
+
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
       if (!columnIndex) return;
       
@@ -139,9 +138,9 @@ export class KtColumnCellTemplate implements CellTemplate<KtColumnCell> {
 
     return (
       <CellPopover
-        monoClick={false}
+        monoClick
         mainAxisOffset={0}
-        target={
+        target={({ handleOpen }: { handleOpen: () => void }) => (
           <Group 
             h="100%" 
             pl="xs" 
@@ -154,8 +153,6 @@ export class KtColumnCellTemplate implements CellTemplate<KtColumnCell> {
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
             style={{ cursor: columnIndex !== undefined ? 'grab' : 'default' }}
           >
             {columnIndex !== undefined && (
@@ -173,20 +170,18 @@ export class KtColumnCellTemplate implements CellTemplate<KtColumnCell> {
               size={12}
               color={entityColor(column.entityType).fill}
             />
-            <Text fw={500}>{column.entityType}</Text>
-            {isHovered && column.entityType && (
-              <ActionIcon 
-                variant="subtle" 
-                size="xs"
-                color="blue"
-                ml="auto"
-                mr="xs"
-              >
-                <IconSettings size={14} />
-              </ActionIcon>
-            )}
+            <Text fw={500} style={{ marginRight: '4px' }}>{column.entityType}</Text>
+            <ActionIcon 
+              variant="subtle" 
+              size="xs"
+              color="blue"
+              mr="xs"
+              onClick={handleOpen} // Call handleOpen when gear icon is clicked
+            >
+              <IconSettings size={14} />
+            </ActionIcon>
           </Group>
-        }
+        )}
         dropdown={
           <KtColumnSettings
             value={column}
