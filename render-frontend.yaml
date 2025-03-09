@@ -1,0 +1,16 @@
+services:
+  # Frontend web service
+  - type: web
+    name: ai-grid-frontend
+    env: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    includePaths:
+      - 'frontend/'
+    buildCommand: DOCKER_BUILDKIT=1 docker build -t ai-grid-frontend:latest -f ./frontend/Dockerfile ./frontend
+    envVars:
+      - key: VITE_API_URL
+        value: https://ai-grid-backend.onrender.com
+      - key: DOCKER_BUILDKIT
+        value: "1"
+    healthCheckPath: /

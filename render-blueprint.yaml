@@ -19,6 +19,8 @@ services:
       name: milvus-data
       mountPath: /data
       sizeGB: 10
+    includePaths:
+      - 'backend/'
     
   # Frontend web service
   - type: web
@@ -26,8 +28,9 @@ services:
     env: docker
     dockerfilePath: ./frontend/Dockerfile
     dockerContext: ./frontend
+    includePaths:
+      - 'frontend/'
     envVars:
       - key: VITE_API_URL
         value: https://ai-grid-backend.onrender.com
-    plan: free
     healthCheckPath: /
