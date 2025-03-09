@@ -11,64 +11,6 @@ let isGlobalHandlersAdded = false;
 const setupGlobalHandlers = () => {
   if (isGlobalHandlersAdded) return;
   
-  // Click handler to close popovers when clicking outside
-  document.addEventListener('click', (e) => {
-    // Don't process if the target is null
-    if (!e.target) return;
-    
-    // Get the active popover element
-    const store = useStore.getState();
-    if (!store.activePopoverId) return;
-    
-    // Check if the click is inside the active popover's dropdown or target
-    const isInsidePopover = !!(e.target as Element).closest(`.${classes.dropdown}`) || 
-                            !!(e.target as Element).closest(`.${classes.target}`);
-    
-    // Check if the click is inside any Mantine component
-    const isInsideMantineMenu = (function() {
-      // Check the target element itself
-      const targetEl = e.target as Element;
-      
-      // If the target has any class containing "mantine" or has stop propagation attribute
-      if (Array.from(targetEl.classList || []).some(cls => cls.includes('mantine')) ||
-          targetEl.hasAttribute('data-mantine-stop-propagation')) {
-        return true;
-      }
-      
-      // Check all parent elements up to the document root
-      let currentEl: Element | null = targetEl;
-      while (currentEl) {
-        // Check if the element has any class containing "mantine"
-        if (currentEl.classList && Array.from(currentEl.classList).some(cls => cls.includes('mantine'))) {
-          return true;
-        }
-        
-        // Check for data attributes that Mantine uses or stop propagation attribute
-        if (currentEl.hasAttribute('data-menu-dropdown') || 
-            currentEl.hasAttribute('data-menu-item') || 
-            currentEl.hasAttribute('data-position') ||
-            currentEl.hasAttribute('data-mantine-stop-propagation')) {
-          return true;
-        }
-        
-        // Move up to the parent element
-        currentEl = currentEl.parentElement;
-      }
-      
-      return false;
-    })();
-    
-    // If click is inside the popover or a Mantine Menu, don't close it
-    if (isInsidePopover || isInsideMantineMenu) return;
-    
-    console.log('Click event target:', e.target);
-    console.log('isInsidePopover:', isInsidePopover);
-    console.log('isInsideMantineMenu:', isInsideMantineMenu);
-
-    // If click is outside, close the popover
-    store.setActivePopover(null);
-  });
-  
   // Keyboard handler to close popovers when Escape is pressed
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -135,6 +77,38 @@ function CellPopover({
     }
   };
   
+  useEffect(() => {
+    if (opened) {
+      const handleClickOutside = (event: MouseEvent) => {
+        if (!event.target) return;
+        const targetElement = event.target as HTMLElement;
+        const isInsideDropdown = !!targetElement.closest(`.${classes.dropdown}`);
+        const isInsideTarget = !!targetElement.closest(`.${classes.target}`);
+        const isInsidePopover = isInsideDropdown || isInsideTarget;
+        const isInsideMantineMenu = (function() {
+          const targetEl = event.target as Element;
+          if (Array.from(targetEl.classList || []).some(cls => cls.includes('mantine')) || targetEl.hasAttribute('data-mantine-stop-propagation')) return true;
+          let currentEl: Element | null = targetEl;
+          while (currentEl) {
+            if (currentEl.classList && Array.from(currentEl.classList).some(cls => cls.includes('mantine'))) return true;
+            if (currentEl.hasAttribute('data-menu-dropdown') || currentEl.hasAttribute('data-menu-item') || currentEl.hasAttribute('data-position') || currentEl.hasAttribute('data-mantine-stop-propagation')) return true;
+            currentEl = currentEl.parentElement;
+          }
+          return false;
+        })();
+
+
+        if (!isInsidePopover && !isInsideMantineMenu) {
+          handleClose();
+        }
+      };
+      document.addEventListener('click', handleClickOutside);
+      return () => {
+        document.removeEventListener('click', handleClickOutside);
+      };
+    }
+  }, [opened, handleClose]);
+
   return (
     <Popover
       opened={opened}
